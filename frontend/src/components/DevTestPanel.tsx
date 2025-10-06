@@ -98,8 +98,8 @@ export function DevTestPanel() {
         </div>
 
         <div className="text-xs text-muted-foreground mt-4">
-          <p><strong>Backend:</strong> http://localhost:3001</p>
-          <p><strong>Frontend:</strong> http://localhost:8080</p>
+          <p><strong>Backend:</strong> {window.location.origin}/api</p>
+          <p><strong>Frontend:</strong> {window.location.origin}</p>
           <p><strong>Status:</strong> {isLoading ? 'Testing...' : 'Ready'}</p>
         </div>
       </CardContent>

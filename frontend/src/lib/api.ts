@@ -1,4 +1,6 @@
-const API_BASE_URL = 'http://localhost:3000/api';
+import { config } from '../config/environment';
+
+const API_BASE_URL = `${config.api.baseUrl}${config.api.prefix}`;
 
 export interface ApiResponse<T> {
   data?: T;
