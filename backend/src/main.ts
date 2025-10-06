@@ -13,9 +13,12 @@ import { NotFoundExceptionFilter } from './common/filters/not-found-exception.fi
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
+  // Set global prefix FIRST before any middleware
+  app.setGlobalPrefix('api');
+  
   const configService = app.get(ConfigService);
   
-  // Add root path handler before setting global prefix
+  // Add root path handler for non-API routes
   app.use('/', (req: any, res: any, next: any) => {
     if (req.method === 'GET' && req.path === '/') {
       res.json({
@@ -40,9 +43,6 @@ async function bootstrap() {
 
   // Serve static files from public directory
   app.use('/public', express.static(join(__dirname, '..', 'public')));
-
-  // Global prefix for API routes
-  app.setGlobalPrefix('api');
   
   // Security middleware
   app.use(helmet({
