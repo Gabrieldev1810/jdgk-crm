@@ -4,8 +4,11 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import * as cookieParser from 'cookie-parser';
+import * as express from 'express';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { RootController } from './root.controller';
+import { NotFoundExceptionFilter } from './common/filters/not-found-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -34,6 +37,9 @@ async function bootstrap() {
       next();
     }
   });
+
+  // Serve static files from public directory
+  app.use('/public', express.static(join(__dirname, '..', 'public')));
 
   // Global prefix for API routes
   app.setGlobalPrefix('api');
@@ -76,6 +82,9 @@ async function bootstrap() {
     forbidNonWhitelisted: true,
     transform: true,
   }));
+
+  // Global 404 exception filter
+  app.useGlobalFilters(new NotFoundExceptionFilter());
   
   // Swagger documentation
   const config = new DocumentBuilder()
