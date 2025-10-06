@@ -38,8 +38,8 @@ USER nestjs
 # Expose port
 EXPOSE 3000
 
-# Health check with extended startup time for NestJS app
-HEALTHCHECK --interval=30s --timeout=15s --start-period=60s --retries=5 \
+# Health check with very extended startup time for PostgreSQL connection
+HEALTHCHECK --interval=45s --timeout=20s --start-period=120s --retries=6 \
   CMD curl -f http://localhost:3000/health || curl -f http://localhost:3000/ || exit 1
 
 # Start the application with database initialization

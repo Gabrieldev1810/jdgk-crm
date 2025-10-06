@@ -29,7 +29,7 @@ services:
       - "3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:password@postgresql-database-b0gwc0kckww0c0ocscocss0:5432/postgres}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgresql-database-b0gwc0kckww0c0ocscocss0:5432/postgres}
       - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production-32-chars-minimum}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1h}
       - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-7d}

@@ -3,30 +3,35 @@ set -e
 
 echo "Starting Dial-Craft Backend..."
 
-# Wait for PostgreSQL to be available
-echo "Waiting for PostgreSQL to be ready..."
-until npx prisma db push --accept-data-loss > /dev/null 2>&1; do
-  echo "PostgreSQL is unavailable - sleeping"
-  sleep 2
-done
-echo "PostgreSQL is ready!"
+# Print database connection info for debugging
+echo "Database URL: $DATABASE_URL"
 
-# Ensure database schema is up to date
-echo "Deploying database migrations..."
-npx prisma migrate deploy || {
-    echo "Migration deploy failed, trying to push schema..."
-    npx prisma db push --accept-data-loss || {
-        echo "Schema push failed, continuing with existing schema..."
-    }
-}
+# Simple database connection test with timeout
+echo "Testing database connection..."
+max_attempts=30
+attempt=1
+
+while [ $attempt -le $max_attempts ]; do
+    echo "Connection attempt $attempt/$max_attempts..."
+    
+    if npx prisma db push --accept-data-loss --skip-generate > /dev/null 2>&1; then
+        echo "✅ PostgreSQL connection successful!"
+        break
+    else
+        echo "❌ PostgreSQL connection failed, retrying in 3 seconds..."
+        if [ $attempt -eq $max_attempts ]; then
+            echo "❌ Failed to connect to PostgreSQL after $max_attempts attempts"
+            echo "Starting application anyway (it will retry internally)..."
+            break
+        fi
+        sleep 3
+        attempt=$((attempt + 1))
+    fi
+done
 
 # Regenerate Prisma client to ensure compatibility
 echo "Regenerating Prisma client..."
 npx prisma generate
-
-# Optionally seed the database if needed
-echo "Checking if database needs seeding..."
-npx prisma db seed || echo "Seeding skipped or failed, continuing..."
 
 # Start the application
 echo "Starting NestJS application..."
