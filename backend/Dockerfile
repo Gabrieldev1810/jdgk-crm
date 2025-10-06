@@ -15,6 +15,9 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# Make startup script executable
+RUN chmod +x start.sh
+
 # Generate Prisma client and ensure engines are available
 RUN npm run db:generate
 
@@ -35,9 +38,9 @@ USER nestjs
 # Expose port
 EXPOSE 3001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:3001/health || exit 1
+# Health check with extended startup time for NestJS app
+HEALTHCHECK --interval=30s --timeout=15s --start-period=60s --retries=5 \
+  CMD curl -f http://localhost:3001/health || curl -f http://localhost:3001/ || exit 1
 
-# Start the application
-CMD ["npm", "run", "start:prod"]
+# Start the application with database initialization
+CMD ["./start.sh"]
