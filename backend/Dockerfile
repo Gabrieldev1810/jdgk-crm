@@ -1,8 +1,8 @@
 FROM node:18-alpine
 
-# Install essential system dependencies for Prisma
+# Install essential system dependencies for Prisma and PostgreSQL client
 # Using minimal package set to avoid repository issues
-RUN apk add --no-cache curl openssl
+RUN apk add --no-cache curl openssl postgresql-client
 
 WORKDIR /app
 
