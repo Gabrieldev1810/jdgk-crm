@@ -3,28 +3,26 @@ set -e
 
 echo "Starting Dial-Craft Backend..."
 
-# Ensure prisma directory has proper permissions
-echo "Setting up database directory..."
-mkdir -p /app/prisma
-chmod 755 /app/prisma
-
-# Check if database file exists
-if [ ! -f "/app/prisma/dev.db" ]; then
-    echo "Database file not found, initializing new database..."
-    # Create empty database file
-    touch /app/prisma/dev.db
-    chmod 644 /app/prisma/dev.db
-fi
+# Wait for PostgreSQL to be available
+echo "Waiting for PostgreSQL to be ready..."
+until npx prisma db push --accept-data-loss > /dev/null 2>&1; do
+  echo "PostgreSQL is unavailable - sleeping"
+  sleep 2
+done
+echo "PostgreSQL is ready!"
 
 # Ensure database schema is up to date
-echo "Checking database schema..."
+echo "Deploying database migrations..."
 npx prisma migrate deploy || {
     echo "Migration deploy failed, trying to push schema..."
     npx prisma db push --accept-data-loss || {
-        echo "Schema push failed, creating database from scratch..."
-        npx prisma migrate reset --force --skip-seed || echo "Reset failed, continuing..."
+        echo "Schema push failed, continuing with existing schema..."
     }
 }
+
+# Regenerate Prisma client to ensure compatibility
+echo "Regenerating Prisma client..."
+npx prisma generate
 
 # Optionally seed the database if needed
 echo "Checking if database needs seeding..."
