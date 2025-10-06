@@ -1,7 +1,12 @@
 FROM node:18-alpine
 
-# Install system dependencies including wget for health checks
-RUN apk add --no-cache wget
+# Install system dependencies for Prisma and health checks
+# OpenSSL libs are required for Prisma Client to work properly
+RUN apk add --no-cache \
+    wget \
+    openssl \
+    openssl-dev \
+    libc6-compat
 
 WORKDIR /app
 
@@ -14,7 +19,7 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Generate Prisma client
+# Generate Prisma client and ensure engines are available
 RUN npm run db:generate
 
 # Build the application
