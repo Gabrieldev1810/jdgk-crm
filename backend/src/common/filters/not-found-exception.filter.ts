@@ -10,8 +10,8 @@ export class NotFoundExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest();
 
-    // Check if this is an API request
-    const isApiRequest = request.url.startsWith('/api/');
+    // Check if this is an API request (any non-root path)
+    const isApiRequest = request.url !== '/';
     
     if (isApiRequest) {
       // Return JSON response for API requests
@@ -21,7 +21,7 @@ export class NotFoundExceptionFilter implements ExceptionFilter {
         message: 'The requested API endpoint does not exist',
         timestamp: new Date().toISOString(),
         path: request.url,
-        suggestion: 'Check the API documentation at /api/docs for available endpoints'
+        suggestion: 'Check the API documentation at /docs for available endpoints'
       });
     } else {
       // Serve custom 404 HTML page for web requests

@@ -13,8 +13,8 @@ import { NotFoundExceptionFilter } from './common/filters/not-found-exception.fi
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
-  // Set global prefix FIRST before any middleware
-  app.setGlobalPrefix('api');
+  // No global prefix - Coolify strips /api when routing to backend
+  // Controllers will handle their own paths directly
   
   const configService = app.get(ConfigService);
   
@@ -28,11 +28,10 @@ async function bootstrap() {
         status: 'running',
         timestamp: new Date().toISOString(),
         endpoints: {
-          api: '/api',
-          health: '/api/health',
-          docs: '/api/docs',
-          auth: '/api/auth',
-          users: '/api/users'
+          health: '/health',
+          docs: '/docs',
+          auth: '/auth',
+          users: '/users'
         },
         description: 'Bank-Compliant CRM for Call Center Agency'
       });
@@ -104,7 +103,7 @@ async function bootstrap() {
     .build();
     
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  SwaggerModule.setup('docs', app, document);
   
   const port = configService.get('PORT') || 3000;
   // Listen on all interfaces for better Windows compatibility
