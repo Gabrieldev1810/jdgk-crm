@@ -1,12 +1,8 @@
 FROM node:18-alpine
 
-# Update package repository and install system dependencies
-# OpenSSL libs are required for Prisma Client to work properly
-RUN apk update && apk add --no-cache \
-    wget \
-    curl \
-    openssl \
-    libc6-compat
+# Install essential system dependencies for Prisma
+# Using minimal package set to avoid repository issues
+RUN apk add --no-cache curl openssl
 
 WORKDIR /app
 
