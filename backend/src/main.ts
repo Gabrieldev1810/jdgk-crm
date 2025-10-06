@@ -63,6 +63,10 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       configService.get('FRONTEND_URL') || 'http://localhost:8080',
+      'https://staging.digiedgesolutions.cloud', // Staging domain
+      'http://staging.digiedgesolutions.cloud',  // Staging domain (HTTP)
+      'https://digiedgesolutions.cloud',          // Production domain
+      'http://digiedgesolutions.cloud',           // Production domain (HTTP)
       'http://localhost:5173', // Vite default dev port
       'http://localhost:3000', // React default dev port  
       'http://localhost:3001', // Alternative React port
