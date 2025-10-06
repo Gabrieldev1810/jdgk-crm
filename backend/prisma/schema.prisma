@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String          @id @default(uuid())
+  email                String          @unique
+  password             String
+  firstName            String
+  lastName             String
+  role                 String          @default("AGENT")
+  isActive             Boolean         @default(true)
+  lastLogin            DateTime?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  emailVerified        Boolean         @default(false)
+  emailVerifyToken     String?         @unique
+  emailVerifyExpires   DateTime?
+  passwordResetToken   String?         @unique
+  passwordResetExpires DateTime?
+  failedLoginAttempts  Int             @default(0)
+  accountLockedUntil   DateTime?
+  lastFailedLogin      DateTime?
+  passwordChangedAt    DateTime        @default(now())
+  mustChangePassword   Boolean         @default(false)
+  accountActions       AccountAction[]
+  assignedAccounts     Account[]       @relation("AssignedAgent")
+  calls                Call[]
+  refreshTokens        RefreshToken[]
+  uploadBatches        UploadBatch[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model Account {
+  id                     String          @id @default(uuid())
+  accountNumber          String          @unique
+  firstName              String
+  lastName               String
+  fullName               String
+  email                  String?
+  address1               String?
+  address2               String?
+  city                   String?
+  state                  String?
+  zipCode                String?
+  country                String?         @default("US")
+  originalAmount         Float
+  currentBalance         Float
+  amountPaid             Float           @default(0)
+  interestRate           Float?
+  lastPaymentDate        DateTime?
+  lastPaymentAmount      Float?
+  status                 String          @default("NEW")
+  priority               String          @default("MEDIUM")
+  assignedAgentId        String?
+  assignedDate           DateTime?
+  preferredContactMethod String?         @default("PHONE")
+  bestTimeToCall         String?
+  timezone               String?         @default("EST")
+  language               String?         @default("EN")
+  daysPastDue            Int             @default(0)
+  lastContactDate        DateTime?
+  nextContactDate        DateTime?
+  contactAttempts        Int             @default(0)
+  doNotCall              Boolean         @default(false)
+  disputeFlag            Boolean         @default(false)
+  bankruptcyFlag         Boolean         @default(false)
+  deceasedFlag           Boolean         @default(false)
+  notes                  String?
+  source                 String?
+  batchId                String?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+  actions                AccountAction[]
+  phoneNumbers           AccountPhone[]
+  assignedAgent          User?           @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  calls                  Call[]
+
+  @@index([accountNumber])
+  @@index([status])
+  @@index([assignedAgentId])
+  @@index([lastContactDate])
+  @@index([nextContactDate])
+  @@map("accounts")
+}
+
+model AccountPhone {
+  id          String   @id @default(uuid())
+  accountId   String
+  phoneNumber String
+  phoneType   String   @default("PRIMARY")
+  isValid     Boolean  @default(true)
+  doNotCall   Boolean  @default(false)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  calls       Call[]
+
+  @@unique([accountId, phoneNumber])
+  @@index([phoneNumber])
+  @@map("account_phones")
+}
+
+model Call {
+  id              String        @id @default(uuid())
+  accountId       String
+  accountPhoneId  String?
+  agentId         String
+  direction       String
+  startTime       DateTime
+  endTime         DateTime?
+  duration        Int?
+  status          String
+  disposition     String?
+  notes           String?
+  followUpDate    DateTime?
+  amountPromised  Float?
+  amountCollected Float?
+  recordingPath   String?
+  callerId        String?
+  campaignId      String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  agent           User          @relation(fields: [agentId], references: [id])
+  accountPhone    AccountPhone? @relation(fields: [accountPhoneId], references: [id])
+  account         Account       @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
+  @@index([agentId])
+  @@index([startTime])
+  @@index([disposition])
+  @@map("calls")
+}
+
+model AccountAction {
+  id          String   @id @default(uuid())
+  accountId   String
+  agentId     String
+  actionType  String
+  description String
+  details     String?
+  createdAt   DateTime @default(now())
+  agent       User     @relation(fields: [agentId], references: [id])
+  account     Account  @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
+  @@index([agentId])
+  @@index([createdAt])
+  @@map("account_actions")
+}
+
+model UploadBatch {
+  id                  String    @id @default(uuid())
+  filename            String
+  originalFilename    String
+  fileSize            Int
+  mimeType            String
+  totalRecords        Int       @default(0)
+  processedRecords    Int       @default(0)
+  successCount        Int       @default(0)
+  errorCount          Int       @default(0)
+  skipCount           Int       @default(0)
+  duplicateCount      Int       @default(0)
+  status              String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  uploadedById        String
+  batchName           String?
+  skipErrors          Boolean   @default(false)
+  updateExisting      Boolean   @default(false)
+  processingStarted   DateTime?
+  processingCompleted DateTime?
+  errorLog            String? // JSON string of errors
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  uploadedBy          User      @relation(fields: [uploadedById], references: [id])
+
+  @@index([status])
+  @@index([uploadedById])
+  @@index([createdAt])
+  @@map("upload_batches")
+}

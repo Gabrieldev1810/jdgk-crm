@@ -1,0 +1,5 @@
+accountNumber,firstName,lastName,email,originalAmount,currentBalance,status,priority
+ACC001,John,Doe,john.doe@email.com,1000.00,850.00,ACTIVE,HIGH
+ACC002,Jane,Smith,jane.smith@email.com,2500.00,2200.00,NEW,MEDIUM
+ACC003,Bob,Johnson,bob.johnson@email.com,1500.00,1350.00,ACTIVE,LOW
+ACC004,Alice,Williams,alice.williams@email.com,3000.00,2800.00,NEW,URGENT

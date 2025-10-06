@@ -1,0 +1,11 @@
+accountNumber,firstName,lastName,email,originalAmount,currentBalance,status,priority,city,state,zipCode
+ACC10001,John,Doe,john.doe@email.com,5000.00,4250.00,ACTIVE,HIGH,New York,NY,10001
+ACC10002,Jane,Smith,jane.smith@email.com,3500.00,3100.00,NEW,MEDIUM,Los Angeles,CA,90210
+ACC10003,Michael,Johnson,michael.j@email.com,7500.00,6800.00,ACTIVE,URGENT,Chicago,IL,60601
+ACC10004,Sarah,Williams,sarah.w@email.com,2000.00,1800.00,NEW,LOW,Houston,TX,77001
+ACC10005,David,Brown,david.brown@email.com,4200.00,3900.00,ACTIVE,MEDIUM,Phoenix,AZ,85001
+ACC10006,Lisa,Davis,lisa.davis@email.com,6000.00,5500.00,NEW,HIGH,Philadelphia,PA,19101
+ACC10007,Robert,Miller,robert.m@email.com,1500.00,1350.00,ACTIVE,LOW,San Antonio,TX,78201
+ACC10008,Jennifer,Wilson,jennifer.w@email.com,8000.00,7200.00,NEW,URGENT,San Diego,CA,92101
+ACC10009,Christopher,Moore,chris.moore@email.com,3200.00,2900.00,ACTIVE,MEDIUM,Dallas,TX,75201
+ACC10010,Amanda,Taylor,amanda.t@email.com,4800.00,4300.00,NEW,HIGH,San Jose,CA,95101
