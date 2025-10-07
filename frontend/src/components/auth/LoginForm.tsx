@@ -139,25 +139,6 @@ export function LoginForm({ onLogin }: LoginFormProps) {
           )}
         </Button>
       </form>
-      
-      {/* Demo Info */}
-      <div className="text-xs text-muted-foreground text-center border-t border-border pt-4 space-y-2">
-        <p className="font-medium text-foreground">Demo Accounts Available:</p>
-        <div className="grid grid-cols-1 gap-1">
-          <div className="font-mono">
-            <span className="text-blue-400">admin@bank.com</span> / <span className="text-green-400">demo123</span>
-          </div>
-          <div className="font-mono">
-            <span className="text-blue-400">manager@bank.com</span> / <span className="text-green-400">demo123</span>
-          </div>
-          <div className="font-mono">
-            <span className="text-blue-400">agent@bank.com</span> / <span className="text-green-400">demo123</span>
-          </div>
-        </div>
-        <p className="text-xs opacity-75">
-          Additional: admin@dialcraft.com/admin123, manager@dialcraft.com/manager123, agent@dialcraft.com/agent123
-        </p>
-      </div>
     </div>
   )
 }
