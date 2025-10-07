@@ -16,8 +16,6 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
-    networks:
-      - default
 
   # Backend API Service
   backend:
@@ -42,11 +40,3 @@ services:
       retries: 6
       start_period: 240s
     restart: unless-stopped
-    networks:
-      - default
-
-# Use Coolify's default network to connect to PostgreSQL service
-networks:
-  default:
-    external: true
-    name: digital-edge-solutions-rk845kc4wgws0s0g0g00kcc8
