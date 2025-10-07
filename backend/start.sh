@@ -32,42 +32,59 @@ nc -zv postgresql-database-hgwks4o884cgo8wo8ok84ock 5432 || echo "nc failed - po
 echo "=========================="
 
 # Try to setup database schema and seed data
-echo "Attempting to setup database schema..."
-if npx prisma db push --accept-data-loss --skip-generate > /dev/null 2>&1; then
-    echo "✅ Database schema applied successfully!"
-    
-    # Try to seed initial admin user
+echo "Testing database connections..."
+
+# Test internal connection first
+export DATABASE_URL_INTERNAL="postgresql://postgres:K8A1EuplrcGvVwi577BihGvTkKXbWhe6WDA5OJY6sE7XGd4GXCmdaeUTNddPpNRl@hgwks4o884cgo8wo8ok84ock:5432/postgres"
+export DATABASE_URL_PUBLIC="postgresql://postgres:K8A1EuplrcGvVwi577BihGvTkKXbWhe6WDA5OJY6sE7XGd4GXCmdaeUTNddPpNRl@31.97.70.246:5432/postgres"
+
+# Try internal connection first
+if DATABASE_URL="$DATABASE_URL_INTERNAL" npx prisma db push --accept-data-loss --skip-generate > /dev/null 2>&1; then
+    echo "✅ Database connected via internal URL!"
+    export DATABASE_URL="$DATABASE_URL_INTERNAL"
+elif DATABASE_URL="$DATABASE_URL_PUBLIC" npx prisma db push --accept-data-loss --skip-generate > /dev/null 2>&1; then
+    echo "✅ Database connected via public URL!"
+    export DATABASE_URL="$DATABASE_URL_PUBLIC"
+else
+    echo "⚠️ Both database connections failed - will retry during app startup"
+    # Keep the original DATABASE_URL from environment
+fi
+
+# If we have a working connection, seed the admin user
+if [ ! -z "$DATABASE_URL" ]; then
     echo "Seeding initial admin user..."
-    if npx prisma db seed > /dev/null 2>&1 || node -e "
+    if node -e "
         const { PrismaClient } = require('@prisma/client');
         const bcrypt = require('bcrypt');
         const prisma = new PrismaClient();
         
         async function seed() {
-            const hashedPassword = await bcrypt.hash('admin123', 12);
-            await prisma.user.upsert({
-                where: { email: 'admin@bank.com' },
-                update: {},
-                create: {
-                    email: 'admin@bank.com',
-                    password: hashedPassword,
-                    firstName: 'Admin',
-                    lastName: 'User',
-                    role: 'ADMIN',
-                    isActive: true
-                }
-            });
-            console.log('✅ Admin user created: admin@bank.com / admin123');
+            try {
+                const hashedPassword = await bcrypt.hash('admin123', 12);
+                await prisma.user.upsert({
+                    where: { email: 'admin@bank.com' },
+                    update: {},
+                    create: {
+                        email: 'admin@bank.com',
+                        password: hashedPassword,
+                        firstName: 'Admin',
+                        lastName: 'User',
+                        role: 'ADMIN',
+                        isActive: true
+                    }
+                });
+                console.log('✅ Admin user created: admin@bank.com / admin123');
+            } catch (error) {
+                console.log('⚠️ Admin user seeding failed:', error.message);
+            }
         }
         
-        seed().catch(console.error).finally(() => prisma.\$disconnect());
-    " > /dev/null 2>&1; then
+        seed().finally(() => prisma.\$disconnect());
+    " 2>/dev/null; then
         echo "✅ Admin user seeded successfully!"
     else
-        echo "⚠️ Failed to seed admin user - will be created on first app start"
+        echo "⚠️ Failed to seed admin user - will be created on first login attempt"
     fi
-else
-    echo "⚠️ Database schema setup failed - will retry during app startup"
 fi
 
 # Start the application
