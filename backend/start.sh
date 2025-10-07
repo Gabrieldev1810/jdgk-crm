@@ -15,45 +15,41 @@ DB_PORT=$(echo $DATABASE_URL | sed 's/.*:\([0-9]*\)\/.*/\1/')
 echo "Database Host: $DB_HOST"
 echo "Database Port: $DB_PORT"
 
-# Wait for PostgreSQL to be ready
-echo "Waiting for PostgreSQL to be ready..."
-max_attempts=30
-attempt=1
-
-while [ $attempt -le $max_attempts ]; do
-    echo "Connection attempt $attempt/$max_attempts..."
-    
-    # Try to connect with psql if available, otherwise use prisma
-    if command -v pg_isready >/dev/null 2>&1; then
-        if pg_isready -h "$DB_HOST" -p "$DB_PORT" > /dev/null 2>&1; then
-            echo "✅ PostgreSQL server is ready!"
-            break
-        fi
-    else
-        # Fallback to prisma db push test
-        if npx prisma db push --accept-data-loss --skip-generate > /dev/null 2>&1; then
-            echo "✅ PostgreSQL connection successful via Prisma!"
-            break
-        fi
-    fi
-    
-    echo "❌ PostgreSQL not ready, retrying in 5 seconds..."
-    if [ $attempt -eq $max_attempts ]; then
-        echo "❌ Failed to connect to PostgreSQL after $max_attempts attempts"
-        echo "Attempting to start application anyway..."
-        break
-    fi
-    sleep 5
-    attempt=$((attempt + 1))
-done
-
 # Regenerate Prisma client to ensure compatibility
 echo "Regenerating Prisma client..."
 npx prisma generate
 
-# Apply database schema
-echo "Applying database schema..."
-npx prisma db push --accept-data-loss --skip-generate
+echo "Testing basic network connectivity to database host..."
+if command -v ping >/dev/null 2>&1; then
+    if ping -c 1 "$DB_HOST" >/dev/null 2>&1; then
+        echo "✅ Can reach database host: $DB_HOST"
+    else
+        echo "❌ Cannot reach database host: $DB_HOST"
+    fi
+fi
+
+# Try to apply database schema with limited retries
+echo "Attempting to apply database schema..."
+max_attempts=10
+attempt=1
+
+while [ $attempt -le $max_attempts ]; do
+    echo "Schema attempt $attempt/$max_attempts..."
+    
+    if npx prisma db push --accept-data-loss --skip-generate > /dev/null 2>&1; then
+        echo "✅ Database schema applied successfully!"
+        break
+    else
+        echo "❌ Schema application failed, retrying in 3 seconds..."
+        if [ $attempt -eq $max_attempts ]; then
+            echo "❌ Failed to apply schema after $max_attempts attempts"
+            echo "Starting application anyway - it will handle database connections internally..."
+            break
+        fi
+        sleep 3
+        attempt=$((attempt + 1))
+    fi
+done
 
 # Start the application
 echo "Starting NestJS application on port $PORT..."
