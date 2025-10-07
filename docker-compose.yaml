@@ -34,9 +34,9 @@ services:
       - PORT=3000
       - FRONTEND_URL=${FRONTEND_URL:-https://staging.digiedgesolutions.cloud}
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || curl -f http://localhost:3000/ || exit 1"]
-      interval: 45s
-      timeout: 20s
-      retries: 6
-      start_period: 240s
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
