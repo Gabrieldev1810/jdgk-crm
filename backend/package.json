@@ -21,7 +21,9 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "db:seed": "ts-node prisma/seed.ts"
+    "db:seed": "ts-node prisma/seed.ts",
+    "security:test": "node test-security-headers.js",
+    "security:check": "npm audit && node test-security-headers.js"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",

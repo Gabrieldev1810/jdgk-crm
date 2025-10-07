@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
@@ -10,6 +10,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 import { AppController } from './app.controller';
 import { RootController } from './root.controller';
+import SecurityHeadersMiddleware from './common/middleware/security-headers.middleware';
 
 @Module({
   imports: [
@@ -36,5 +37,12 @@ import { RootController } from './root.controller';
     BulkUploadModule,
   ],
   controllers: [AppController, RootController],
+  providers: [SecurityHeadersMiddleware],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(SecurityHeadersMiddleware)
+      .forRoutes('*'); // Apply to all routes
+  }
+}
