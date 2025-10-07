@@ -29,7 +29,7 @@ services:
       - "3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://postgres:bZskUQXxQgCez9fJr5RbRlfeivra37Rmbt0sL9WOkhBKCBJwXzFBYsK3MKGALz@postgresql-database-b0gwc0kckww0c0ocscocss0:5432/postgres
+      - DATABASE_URL=postgresql://postgres:K8A1EuplrcGvVwi577BihGvTkKXbWhe6WDA5OJY6sE7XGd4GXCmdaeUTNddPpNRl@postgresql-database-hgwks4o884cgo8wo8ok84ock:5432/postgres
       - JWT_SECRET=${JWT_SECRET:-936c2e9801a3820f6d2d4eefc9a879874faef8a573aeda52fdd2077c515295a4}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1h}
       - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-7d}
