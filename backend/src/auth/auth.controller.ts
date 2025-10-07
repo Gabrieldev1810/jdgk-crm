@@ -8,10 +8,12 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
+import { AuthDebugService } from './auth-debug.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { LoginDto, RefreshTokenDto } from './dto/auth.dto';
@@ -20,7 +22,10 @@ import { User } from '@prisma/client';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private authDebugService: AuthDebugService
+  ) {}
 
   @ApiOperation({ summary: 'User login' })
   @ApiResponse({ status: 200, description: 'Login successful' })
@@ -39,14 +44,24 @@ export class AuthController {
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      domain: process.env.NODE_ENV === 'production' ? '.digiedgesolutions.cloud' : undefined,
     });
 
     return {
       user: result.user,
       accessToken: result.accessToken,
     };
+  }
+
+  @ApiOperation({ summary: 'Debug login - simple token response' })
+  @ApiResponse({ status: 200, description: 'Login successful' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @Post('login-debug')
+  @HttpCode(HttpStatus.OK)
+  async loginDebug(@Body() loginDto: LoginDto) {
+    return this.authDebugService.loginDebug(loginDto.email, loginDto.password);
   }
 
   @ApiOperation({ summary: 'Refresh access token' })
@@ -60,23 +75,35 @@ export class AuthController {
   ) {
     const refreshToken = req.cookies.refreshToken;
     
+    console.log('Refresh token request received');
+    console.log('Cookies:', req.cookies);
+    console.log('Refresh token present:', !!refreshToken);
+    
     if (!refreshToken) {
-      throw new Error('Refresh token not provided');
+      console.log('No refresh token in cookies');
+      throw new UnauthorizedException('Refresh token not provided');
     }
 
-    const result = await this.authService.refreshToken(refreshToken);
+    try {
+      const result = await this.authService.refreshToken(refreshToken);
 
-    // Set new refresh token as httpOnly cookie
-    res.cookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+      // Set new refresh token as httpOnly cookie
+      res.cookie('refreshToken', result.refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        domain: process.env.NODE_ENV === 'production' ? '.digiedgesolutions.cloud' : undefined,
+      });
 
-    return {
-      accessToken: result.accessToken,
-    };
+      console.log('Token refresh successful');
+      return {
+        accessToken: result.accessToken,
+      };
+    } catch (error) {
+      console.log('Token refresh failed:', error.message);
+      throw error;
+    }
   }
 
   @ApiOperation({ summary: 'User logout' })

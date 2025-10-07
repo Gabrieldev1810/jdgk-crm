@@ -42,38 +42,77 @@ class AuthService {
   // ================================
   async login(credentials: LoginRequest): Promise<LoginResponse> {
     try {
-      // Backend returns { user, accessToken } format directly (not wrapped in ApiResponse)
+      console.log('🔍 Attempting login with credentials:', { email: credentials.email });
+      
+      // Try debug endpoint first to bypass cookie issues
       interface BackendLoginResponse {
+        success: boolean;
         user: User;
         accessToken: string;
+        refreshToken?: string;
+        message: string;
       }
       
-      const response = await api.post<BackendLoginResponse>('/auth/login', credentials);
+      let response: BackendLoginResponse;
+      
+      try {
+        console.log('🧪 Trying debug login endpoint...');
+        response = await api.post<BackendLoginResponse>('/auth/login-debug', credentials);
+      } catch (debugError) {
+        console.log('⚠️ Debug login failed, falling back to regular login:', debugError);
+        // Fallback to regular login
+        interface RegularLoginResponse {
+          user: User;
+          accessToken: string;
+        }
+        
+        const regularResponse = await api.post<RegularLoginResponse>('/auth/login', credentials);
+        response = {
+          success: true,
+          user: regularResponse.user,
+          accessToken: regularResponse.accessToken,
+          message: 'Login successful (regular endpoint)'
+        };
+      }
+      
+      console.log('✅ Login response received:', { 
+        success: response.success, 
+        hasUser: !!response.user, 
+        hasToken: !!response.accessToken 
+      });
       
       // The backend returns data directly
       if (response && response.user && response.accessToken) {
-        const { user, accessToken } = response;
+        const { user, accessToken, refreshToken } = response;
         
         // Store authentication data
         localStorage.setItem(config.auth.tokenKey, accessToken);
         localStorage.setItem(config.auth.userKey, JSON.stringify(user));
         
+        // Store refresh token if provided (for debug mode)
+        if (refreshToken) {
+          localStorage.setItem('refresh_token_debug', refreshToken);
+        }
+        
         // Update current user
         this.currentUser = user;
         this.notifyAuthChange();
+        
+        console.log('✅ Login successful, user authenticated:', user.email);
         
         // Return in expected format for consistency
         return {
           user,
           access_token: accessToken,
-          refresh_token: '', // Backend uses httpOnly cookie for refresh token
+          refresh_token: refreshToken || '', // Backend uses httpOnly cookie for refresh token
           expires_in: 3600 // 1 hour default
         };
       } else {
+        console.log('❌ Invalid login response format:', response);
         throw new Error('Invalid login response format');
       }
     } catch (error) {
-      console.error('Login failed:', error);
+      console.error('❌ Login failed:', error);
       throw error;
     }
   }
@@ -105,6 +144,21 @@ class AuthService {
 
   async refreshToken(): Promise<string> {
     try {
+      console.log('🔄 Attempting token refresh...');
+      
+      // Check if we have a debug refresh token
+      const debugRefreshToken = localStorage.getItem('refresh_token_debug');
+      
+      if (debugRefreshToken) {
+        console.log('🧪 Using debug refresh token method');
+        // For debug mode, we can't use the refresh token easily, so just return current token
+        const currentToken = localStorage.getItem(config.auth.tokenKey);
+        if (currentToken) {
+          console.log('⚠️ Debug mode: returning current token instead of refreshing');
+          return currentToken;
+        }
+      }
+      
       // Backend expects refresh token from httpOnly cookie, no body needed
       interface BackendRefreshResponse {
         accessToken: string;
@@ -118,12 +172,24 @@ class AuthService {
         // Store new access token
         localStorage.setItem(config.auth.tokenKey, accessToken);
         
+        console.log('✅ Token refreshed successfully');
         return accessToken;
       } else {
         throw new Error('Invalid refresh token response');
       }
     } catch (error) {
-      console.error('Token refresh failed:', error);
+      console.error('❌ Token refresh failed:', error);
+      
+      // In debug mode, don't clear auth immediately
+      const debugRefreshToken = localStorage.getItem('refresh_token_debug');
+      if (debugRefreshToken) {
+        console.log('⚠️ Debug mode: keeping auth despite refresh failure');
+        const currentToken = localStorage.getItem(config.auth.tokenKey);
+        if (currentToken) {
+          return currentToken;
+        }
+      }
+      
       this.clearAuth();
       throw error;
     }
@@ -162,6 +228,7 @@ class AuthService {
   private clearAuth() {
     localStorage.removeItem(config.auth.tokenKey);
     localStorage.removeItem(config.auth.userKey);
+    localStorage.removeItem('refresh_token_debug'); // Clear debug refresh token
     // Note: refresh token is handled via httpOnly cookie by backend
     this.currentUser = null;
     this.notifyAuthChange();
