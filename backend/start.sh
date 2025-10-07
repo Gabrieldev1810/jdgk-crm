@@ -19,6 +19,18 @@ echo "Database Port: $DB_PORT"
 echo "Regenerating Prisma client..."
 npx prisma generate
 
+# Network debugging
+echo "=== NETWORK DEBUGGING ==="
+echo "Container IP configuration:"
+ip addr show | grep inet || echo "ip command not available"
+echo "DNS resolution test:"
+nslookup postgresql-database-hgwks4o884cgo8wo8ok84ock || echo "nslookup failed"
+echo "Network connectivity test:"
+ping -c 1 postgresql-database-hgwks4o884cgo8wo8ok84ock || echo "ping failed"
+echo "Port connectivity test:"
+nc -zv postgresql-database-hgwks4o884cgo8wo8ok84ock 5432 || echo "nc failed - port not reachable"
+echo "=========================="
+
 # Skip database setup for now - let NestJS handle it
 echo "Skipping database setup - NestJS will handle connections internally"
 echo "Database schema will be applied when connection is available"
