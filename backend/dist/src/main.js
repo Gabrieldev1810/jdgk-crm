@@ -6,7 +6,10 @@ const swagger_1 = require("@nestjs/swagger");
 const config_1 = require("@nestjs/config");
 const helmet_1 = require("helmet");
 const cookieParser = require("cookie-parser");
+const express = require("express");
+const path_1 = require("path");
 const app_module_1 = require("./app.module");
+const not_found_exception_filter_1 = require("./common/filters/not-found-exception.filter");
 async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     const configService = app.get(config_1.ConfigService);
@@ -19,11 +22,10 @@ async function bootstrap() {
                 status: 'running',
                 timestamp: new Date().toISOString(),
                 endpoints: {
-                    api: '/api',
-                    health: '/api/health',
-                    docs: '/api/docs',
-                    auth: '/api/auth',
-                    users: '/api/users'
+                    health: '/health',
+                    docs: '/docs',
+                    auth: '/auth',
+                    users: '/users'
                 },
                 description: 'Bank-Compliant CRM for Call Center Agency'
             });
@@ -32,7 +34,7 @@ async function bootstrap() {
             next();
         }
     });
-    app.setGlobalPrefix('api');
+    app.use('/public', express.static((0, path_1.join)(__dirname, '..', 'public')));
     app.use((0, helmet_1.default)({
         contentSecurityPolicy: {
             directives: {
@@ -47,6 +49,10 @@ async function bootstrap() {
     app.enableCors({
         origin: [
             configService.get('FRONTEND_URL') || 'http://localhost:8080',
+            'https://staging.digiedgesolutions.cloud',
+            'http://staging.digiedgesolutions.cloud',
+            'https://digiedgesolutions.cloud',
+            'http://digiedgesolutions.cloud',
             'http://localhost:5173',
             'http://localhost:3000',
             'http://localhost:3001',
@@ -64,6 +70,7 @@ async function bootstrap() {
         forbidNonWhitelisted: true,
         transform: true,
     }));
+    app.useGlobalFilters(new not_found_exception_filter_1.NotFoundExceptionFilter());
     const config = new swagger_1.DocumentBuilder()
         .setTitle('Dial-Craft CRM API')
         .setDescription('Bank-Compliant CRM for Call Center Agency')
@@ -76,7 +83,7 @@ async function bootstrap() {
         .addTag('dispositions', 'Call dispositions')
         .build();
     const document = swagger_1.SwaggerModule.createDocument(app, config);
-    swagger_1.SwaggerModule.setup('api/docs', app, document);
+    swagger_1.SwaggerModule.setup('docs', app, document);
     const port = configService.get('PORT') || 3000;
     await app.listen(port);
     console.log(`🚀 Dial-Craft CRM Backend running on: http://localhost:${port}`);

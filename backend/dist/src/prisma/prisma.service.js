@@ -11,8 +11,13 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 let PrismaService = class PrismaService extends client_1.PrismaClient {
     async onModuleInit() {
-        await this.$connect();
-        console.log('✅ Connected to PostgreSQL database');
+        try {
+            await this.$connect();
+            console.log('✅ Connected to PostgreSQL database');
+        }
+        catch (error) {
+            console.log('⚠️ PostgreSQL connection failed during startup, will retry on demand:', error.message);
+        }
     }
     async onModuleDestroy() {
         await this.$disconnect();
