@@ -6,6 +6,7 @@ import { UsersModule } from './users/users.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { CallsModule } from './calls/calls.module';
 import { BulkUploadModule } from './bulk-upload/bulk-upload.module';
+import { RbacModule } from './rbac/rbac.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 import { AppController } from './app.controller';
@@ -35,6 +36,7 @@ import SecurityHeadersMiddleware from './common/middleware/security-headers.midd
     AccountsModule,
     CallsModule,
     BulkUploadModule,
+    RbacModule,
   ],
   controllers: [AppController, RootController],
   providers: [SecurityHeadersMiddleware],

@@ -1,0 +1,570 @@
+import { Injectable, NotFoundException, ConflictException, Logger, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { 
+  CreateDispositionCategoryDto, 
+  UpdateDispositionCategoryDto,
+  CreateDispositionDto,
+  UpdateDispositionDto,
+  BulkDispositionDto
+} from './dto/disposition.dto';
+
+@Injectable()
+export class DispositionService {
+  private readonly logger = new Logger(DispositionService.name);
+
+  constructor(private prisma: PrismaService) {}
+
+  // ================================
+  // DISPOSITION CATEGORY METHODS
+  // ================================
+
+  /**
+   * Create a new disposition category
+   */
+  async createCategory(data: CreateDispositionCategoryDto) {
+    try {
+      const category = await this.prisma.dispositionCategory.create({
+        data: {
+          name: data.name,
+          description: data.description,
+          color: data.color,
+          sortOrder: data.sortOrder || 0,
+          isActive: data.isActive !== false,
+        },
+      });
+
+      this.logger.log(`Disposition category created: ${category.name}`);
+      return category;
+    } catch (error) {
+      this.logger.error(`Failed to create disposition category: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all disposition categories
+   */
+  async getCategories(includeInactive: boolean = false) {
+    const where = includeInactive ? {} : { isActive: true };
+
+    try {
+      const categories = await this.prisma.dispositionCategory.findMany({
+        where,
+        include: {
+          dispositions: {
+            where: includeInactive ? {} : { isActive: true },
+            orderBy: { sortOrder: 'asc' },
+          },
+          _count: {
+            select: { dispositions: true },
+          },
+        },
+        orderBy: { sortOrder: 'asc' },
+      });
+
+      return categories;
+    } catch (error) {
+      this.logger.error(`Failed to get disposition categories: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get category by ID
+   */
+  async getCategoryById(id: string) {
+    try {
+      const category = await this.prisma.dispositionCategory.findUnique({
+        where: { id },
+        include: {
+          dispositions: {
+            orderBy: { sortOrder: 'asc' },
+          },
+        },
+      });
+
+      if (!category) {
+        throw new NotFoundException(`Disposition category with ID '${id}' not found`);
+      }
+
+      return category;
+    } catch (error) {
+      this.logger.error(`Failed to get disposition category: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Update disposition category
+   */
+  async updateCategory(id: string, data: UpdateDispositionCategoryDto) {
+    try {
+      const existing = await this.prisma.dispositionCategory.findUnique({
+        where: { id },
+      });
+
+      if (!existing) {
+        throw new NotFoundException(`Disposition category with ID '${id}' not found`);
+      }
+
+      const category = await this.prisma.dispositionCategory.update({
+        where: { id },
+        data,
+      });
+
+      this.logger.log(`Disposition category updated: ${category.name}`);
+      return category;
+    } catch (error) {
+      this.logger.error(`Failed to update disposition category: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete disposition category
+   */
+  async deleteCategory(id: string) {
+    try {
+      const existing = await this.prisma.dispositionCategory.findUnique({
+        where: { id },
+        include: {
+          dispositions: true,
+        },
+      });
+
+      if (!existing) {
+        throw new NotFoundException(`Disposition category with ID '${id}' not found`);
+      }
+
+      if (existing.dispositions.length > 0) {
+        throw new ConflictException('Cannot delete category that contains dispositions');
+      }
+
+      await this.prisma.dispositionCategory.delete({
+        where: { id },
+      });
+
+      this.logger.log(`Disposition category deleted: ${existing.name}`);
+      return { message: 'Category deleted successfully' };
+    } catch (error) {
+      this.logger.error(`Failed to delete disposition category: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  // ================================
+  // DISPOSITION METHODS
+  // ================================
+
+  /**
+   * Create a new disposition
+   */
+  async createDisposition(data: CreateDispositionDto) {
+    try {
+      // Check if code already exists
+      const existing = await this.prisma.disposition.findUnique({
+        where: { code: data.code },
+      });
+
+      if (existing) {
+        throw new ConflictException(`Disposition with code '${data.code}' already exists`);
+      }
+
+      // Verify category exists
+      const category = await this.prisma.dispositionCategory.findUnique({
+        where: { id: data.categoryId },
+      });
+
+      if (!category) {
+        throw new NotFoundException(`Disposition category with ID '${data.categoryId}' not found`);
+      }
+
+      const disposition = await this.prisma.disposition.create({
+        data: {
+          code: data.code,
+          name: data.name,
+          description: data.description,
+          categoryId: data.categoryId,
+          sortOrder: data.sortOrder || 0,
+          requiresFollowUp: data.requiresFollowUp || false,
+          requiresPayment: data.requiresPayment || false,
+          requiresNotes: data.requiresNotes || false,
+          isSuccessful: data.isSuccessful || false,
+          isActive: data.isActive !== false,
+        },
+        include: {
+          category: true,
+        },
+      });
+
+      this.logger.log(`Disposition created: ${disposition.code} - ${disposition.name}`);
+      return disposition;
+    } catch (error) {
+      this.logger.error(`Failed to create disposition: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all dispositions with optional filtering
+   */
+  async getDispositions(categoryId?: string, includeInactive: boolean = false) {
+    const where: any = {};
+    if (categoryId) where.categoryId = categoryId;
+    if (!includeInactive) where.isActive = true;
+
+    try {
+      const dispositions = await this.prisma.disposition.findMany({
+        where,
+        include: {
+          category: true,
+        },
+        orderBy: [
+          { category: { sortOrder: 'asc' } },
+          { sortOrder: 'asc' },
+        ],
+      });
+
+      return dispositions;
+    } catch (error) {
+      this.logger.error(`Failed to get dispositions: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get disposition by ID
+   */
+  async getDispositionById(id: string) {
+    try {
+      const disposition = await this.prisma.disposition.findUnique({
+        where: { id },
+        include: {
+          category: true,
+        },
+      });
+
+      if (!disposition) {
+        throw new NotFoundException(`Disposition with ID '${id}' not found`);
+      }
+
+      return disposition;
+    } catch (error) {
+      this.logger.error(`Failed to get disposition: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get disposition by code
+   */
+  async getDispositionByCode(code: string) {
+    try {
+      const disposition = await this.prisma.disposition.findUnique({
+        where: { code },
+        include: {
+          category: true,
+        },
+      });
+
+      if (!disposition) {
+        throw new NotFoundException(`Disposition with code '${code}' not found`);
+      }
+
+      return disposition;
+    } catch (error) {
+      this.logger.error(`Failed to get disposition by code: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Update disposition
+   */
+  async updateDisposition(id: string, data: UpdateDispositionDto) {
+    try {
+      const existing = await this.prisma.disposition.findUnique({
+        where: { id },
+      });
+
+      if (!existing) {
+        throw new NotFoundException(`Disposition with ID '${id}' not found`);
+      }
+
+      // System dispositions can be identified by other means if needed
+
+      // Verify new category exists if provided
+      if (data.categoryId) {
+        const category = await this.prisma.dispositionCategory.findUnique({
+          where: { id: data.categoryId },
+        });
+
+        if (!category) {
+          throw new NotFoundException(`Disposition category with ID '${data.categoryId}' not found`);
+        }
+      }
+
+      const disposition = await this.prisma.disposition.update({
+        where: { id },
+        data,
+        include: {
+          category: true,
+        },
+      });
+
+      this.logger.log(`Disposition updated: ${disposition.code} - ${disposition.name}`);
+      return disposition;
+    } catch (error) {
+      this.logger.error(`Failed to update disposition: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete disposition
+   */
+  async deleteDisposition(id: string) {
+    try {
+      const existing = await this.prisma.disposition.findUnique({
+        where: { id },
+      });
+
+      if (!existing) {
+        throw new NotFoundException(`Disposition with ID '${id}' not found`);
+      }
+
+      // System dispositions can be identified by other means if needed
+
+      // TODO: Check if disposition is used in calls before deleting
+      // This would require checking the calls table once it's implemented
+
+      await this.prisma.disposition.delete({
+        where: { id },
+      });
+
+      this.logger.log(`Disposition deleted: ${existing.code} - ${existing.name}`);
+      return { message: 'Disposition deleted successfully' };
+    } catch (error) {
+      this.logger.error(`Failed to delete disposition: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Bulk upload dispositions from CSV
+   */
+  async bulkUploadDispositions(data: BulkDispositionDto) {
+    try {
+      const lines = data.csvData.split('\n').filter(line => line.trim());
+      
+      if (lines.length === 0) {
+        throw new BadRequestException('CSV data is empty');
+      }
+
+      let startIndex = 0;
+      if (data.skipHeader !== false) {
+        startIndex = 1;
+      }
+
+      const results = {
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        errors: [] as string[],
+      };
+
+      for (let i = startIndex; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        try {
+          // Expected CSV format: code,name,description,categoryName,color,sortOrder,requiresFollowUp,followUpDays,isSuccessful,isFinal
+          const parts = line.split(',').map(part => part.trim().replace(/"/g, ''));
+          
+          if (parts.length < 4) {
+            results.errors.push(`Line ${i + 1}: Invalid format - requires at least code,name,description,categoryName`);
+            results.skipped++;
+            continue;
+          }
+
+          const [
+            code, name, description, categoryName, 
+            color, sortOrder, requiresFollowUp, followUpDays, 
+            isSuccessful, isFinal
+          ] = parts;
+
+          // Find or create category
+          let category = await this.prisma.dispositionCategory.findFirst({
+            where: { name: categoryName },
+          });
+
+          if (!category) {
+            category = await this.prisma.dispositionCategory.create({
+              data: {
+                name: categoryName,
+                description: `Auto-created for ${categoryName} dispositions`,
+                isActive: true,
+                sortOrder: 0,
+              },
+            });
+          }
+
+          const dispositionData = {
+            code,
+            name,
+            description: description || null,
+            categoryId: category.id,
+            sortOrder: sortOrder ? parseInt(sortOrder) : 0,
+            requiresFollowUp: requiresFollowUp === 'true',
+            requiresPayment: false,
+            requiresNotes: false,
+            isSuccessful: isSuccessful === 'true',
+            isActive: true,
+          };
+
+          // Check if disposition exists
+          const existing = await this.prisma.disposition.findUnique({
+            where: { code },
+          });
+
+          if (existing) {
+            if (data.updateExisting) {
+              await this.prisma.disposition.update({
+                where: { code },
+                data: dispositionData,
+              });
+              results.updated++;
+            } else {
+              results.skipped++;
+            }
+          } else {
+            await this.prisma.disposition.create({
+              data: dispositionData,
+            });
+            results.created++;
+          }
+
+        } catch (error) {
+          results.errors.push(`Line ${i + 1}: ${error.message}`);
+          results.skipped++;
+        }
+      }
+
+      this.logger.log(`Bulk upload completed: ${results.created} created, ${results.updated} updated, ${results.skipped} skipped`);
+      return results;
+    } catch (error) {
+      this.logger.error(`Failed to bulk upload dispositions: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Seed default dispositions
+   */
+  async seedDefaultDispositions() {
+    try {
+      // Create default categories
+      const categories = [
+        { name: 'Successful', description: 'Successful contact outcomes', color: '#10B981', sortOrder: 1 },
+        { name: 'No Contact', description: 'Unable to reach contact', color: '#F59E0B', sortOrder: 2 },
+        { name: 'Unsuccessful', description: 'Contact made but unsuccessful', color: '#EF4444', sortOrder: 3 },
+        { name: 'System', description: 'System-generated dispositions', color: '#6B7280', sortOrder: 4 },
+      ];
+
+      const createdCategories = {};
+      for (const catData of categories) {
+        let category = await this.prisma.dispositionCategory.findFirst({
+          where: { name: catData.name },
+        });
+
+        if (!category) {
+          category = await this.prisma.dispositionCategory.create({
+            data: catData,
+          });
+        }
+
+        createdCategories[catData.name] = category.id;
+      }
+
+      // Create default dispositions
+      const dispositions = [
+        // Successful
+        { code: 'SALE', name: 'Sale', description: 'Successful sale completed', category: 'Successful', isSuccessful: true },
+        { code: 'APPOINTMENT', name: 'Appointment Set', description: 'Appointment scheduled', category: 'Successful', requiresFollowUp: true },
+        { code: 'CALLBACK_SCHEDULED', name: 'Callback Scheduled', description: 'Customer requested callback', category: 'Successful', requiresFollowUp: true },
+        
+        // No Contact
+        { code: 'NO_ANSWER', name: 'No Answer', description: 'Phone rang but no answer', category: 'No Contact' },
+        { code: 'BUSY', name: 'Busy', description: 'Phone was busy', category: 'No Contact' },
+        { code: 'VOICEMAIL', name: 'Voicemail', description: 'Left voicemail message', category: 'No Contact', requiresFollowUp: true },
+        { code: 'DISCONNECTED', name: 'Disconnected', description: 'Phone number disconnected', category: 'No Contact' },
+        
+        // Unsuccessful
+        { code: 'NOT_INTERESTED', name: 'Not Interested', description: 'Customer not interested', category: 'Unsuccessful' },
+        { code: 'DO_NOT_CALL', name: 'Do Not Call', description: 'Customer requested no more calls', category: 'Unsuccessful' },
+        { code: 'WRONG_NUMBER', name: 'Wrong Number', description: 'Incorrect phone number', category: 'Unsuccessful' },
+        
+        // System
+        { code: 'SYSTEM_HANGUP', name: 'System Hangup', description: 'System disconnected call', category: 'System' },
+        { code: 'AGENT_HANGUP', name: 'Agent Hangup', description: 'Agent disconnected call', category: 'System' },
+      ];
+
+      const createdDispositions = [];
+      for (const dispData of dispositions) {
+        const existing = await this.prisma.disposition.findUnique({
+          where: { code: dispData.code },
+        });
+
+        if (!existing) {
+          const disposition = await this.prisma.disposition.create({
+            data: {
+              code: dispData.code,
+              name: dispData.name,
+              description: dispData.description,
+              categoryId: createdCategories[dispData.category],
+              requiresFollowUp: dispData.requiresFollowUp || false,
+              requiresPayment: false,
+              requiresNotes: false,
+              isSuccessful: dispData.isSuccessful || false,
+              isActive: true,
+              sortOrder: 0,
+            },
+          });
+          createdDispositions.push(disposition);
+        }
+      }
+
+      this.logger.log(`Seeded ${Object.keys(createdCategories).length} categories and ${createdDispositions.length} dispositions`);
+      return {
+        categories: Object.keys(createdCategories).length,
+        dispositions: createdDispositions.length,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to seed default dispositions: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get disposition statistics
+   */
+  async getDispositionStats() {
+    try {
+      const [totalCategories, totalDispositions, activeDispositions] = await Promise.all([
+        this.prisma.dispositionCategory.count(),
+        this.prisma.disposition.count(),
+        this.prisma.disposition.count({ where: { isActive: true } }),
+      ]);
+
+      return {
+        totalCategories,
+        totalDispositions,
+        activeDispositions,
+        inactiveDispositions: totalDispositions - activeDispositions,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get disposition stats: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+}

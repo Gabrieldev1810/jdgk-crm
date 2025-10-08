@@ -24,7 +24,7 @@ export function AppLayout({ children, userEmail, userRole, onLogout }: AppLayout
               onLogout={onLogout} 
             />
             
-            <main className="flex-1 overflow-auto">
+            <main className="flex-1 overflow-auto p-6">
               {children}
             </main>
           </div>

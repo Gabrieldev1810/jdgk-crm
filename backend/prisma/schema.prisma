@@ -30,10 +30,19 @@ model User {
   passwordChangedAt    DateTime        @default(now())
   mustChangePassword   Boolean         @default(false)
   accountActions       AccountAction[]
-  assignedAccounts     Account[]       @relation("AssignedAgent")
+  assignedAccounts     Account[]          @relation("AssignedAgent")
   calls                Call[]
   refreshTokens        RefreshToken[]
   uploadBatches        UploadBatch[]
+  
+  // RBAC Relationships
+  createdRoles         Role[]             @relation("RoleCreatedBy")
+  userRoles           UserRole[]         @relation("UserRoleAssignment")
+  assignedRoles       UserRole[]         @relation("RoleAssignedBy")
+  grantedPermissions  RolePermission[]   @relation("PermissionGrantedBy")
+  
+  // Audit Log Relationships
+  auditLogs           AuditLog[]         @relation("AuditLogActor")
 
   @@map("users")
 }
@@ -196,4 +205,167 @@ model UploadBatch {
   @@index([uploadedById])
   @@index([createdAt])
   @@map("upload_batches")
+}
+
+// ================================
+// RBAC SYSTEM MODELS
+// ================================
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isSystem    Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+  
+  // Relationships
+  permissions RolePermission[]
+  userRoles   UserRole[]
+  createdBy   User?            @relation("RoleCreatedBy", fields: [createdById], references: [id])
+
+  @@index([name])
+  @@index([isActive])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  code        String   @unique // e.g., "accounts.view", "calls.create"
+  name        String
+  description String?
+  category    String   // e.g., "Accounts", "Calls", "Users", "RBAC"
+  resource    String   // e.g., "accounts", "calls", "users"
+  action      String   // e.g., "view", "create", "edit", "delete"
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  rolePermissions RolePermission[]
+
+  @@index([code])
+  @@index([category])
+  @@index([resource])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String
+  permissionId String
+  grantedAt    DateTime   @default(now())
+  grantedById  String?
+  expiresAt    DateTime?
+  
+  // Relationships
+  role      Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  grantedBy User?      @relation("PermissionGrantedBy", fields: [grantedById], references: [id])
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id          String    @id @default(uuid())
+  userId      String
+  roleId      String
+  assignedAt  DateTime  @default(now())
+  assignedById String?
+  expiresAt   DateTime?
+  isActive    Boolean   @default(true)
+  
+  // Relationships
+  user       User  @relation("UserRoleAssignment", fields: [userId], references: [id], onDelete: Cascade)
+  role       Role  @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedBy User? @relation("RoleAssignedBy", fields: [assignedById], references: [id])
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@index([isActive])
+  @@map("user_roles")
+}
+
+// ================================
+// AUDIT LOG SYSTEM
+// ================================
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorId     String?
+  action      String   // e.g., "CREATE", "UPDATE", "DELETE", "LOGIN", "LOGOUT"
+  entity      String   // e.g., "User", "Role", "Account", "Call"
+  entityId    String?
+  oldValue    String?  // JSON string of old values
+  newValue    String?  // JSON string of new values
+  ipAddress   String?
+  userAgent   String?
+  sessionId   String?
+  metadata    String?  // Additional context as JSON
+  createdAt   DateTime @default(now())
+  
+  // Relationships
+  actor User? @relation("AuditLogActor", fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([action])
+  @@index([entity])
+  @@index([entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ================================
+// DISPOSITION MANAGEMENT SYSTEM
+// ================================
+
+model DispositionCategory {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  color       String?  // Hex color for UI
+  icon        String?  // Icon name
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relationships
+  dispositions Disposition[]
+
+  @@index([sortOrder])
+  @@index([isActive])
+  @@map("disposition_categories")
+}
+
+model Disposition {
+  id                String              @id @default(uuid())
+  code              String              @unique
+  name              String
+  description       String?
+  categoryId        String
+  requiresFollowUp  Boolean             @default(false)
+  requiresPayment   Boolean             @default(false)
+  requiresNotes     Boolean             @default(false)
+  isSuccessful      Boolean             @default(false) // Indicates positive outcome
+  sortOrder         Int                 @default(0)
+  isActive          Boolean             @default(true)
+  usageCount        Int                 @default(0) // Track how often used
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  
+  // Relationships
+  category DispositionCategory @relation(fields: [categoryId], references: [id])
+
+  @@index([code])
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("dispositions")
 }
