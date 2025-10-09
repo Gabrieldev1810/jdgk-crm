@@ -1,0 +1,297 @@
+import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreatePermissionDto, UpdatePermissionDto } from './dto';
+
+@Injectable()
+export class PermissionsService {
+  private readonly logger = new Logger(PermissionsService.name);
+
+  constructor(private prisma: PrismaService) {}
+
+  /**
+   * Create a new permission
+   */
+  async createPermission(data: CreatePermissionDto) {
+    try {
+      // Check if permission code already exists
+      const existing = await this.prisma.permission.findUnique({
+        where: { code: data.code },
+      });
+
+      if (existing) {
+        throw new ConflictException(`Permission with code '${data.code}' already exists`);
+      }
+
+      const permission = await this.prisma.permission.create({
+        data: {
+          code: data.code,
+          name: data.name,
+          description: data.description,
+          category: data.category,
+          resource: data.resource,
+          action: data.action,
+          isSystem: data.isSystem || false,
+        },
+      });
+
+      this.logger.log(`Permission created: ${permission.code}`);
+      return permission;
+    } catch (error) {
+      this.logger.error(`Failed to create permission: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all permissions with optional filtering
+   */
+  async getPermissions(category?: string, resource?: string) {
+    const where: any = {};
+    if (category) where.category = category;
+    if (resource) where.resource = resource;
+
+    try {
+      const permissions = await this.prisma.permission.findMany({
+        where,
+        orderBy: [
+          { category: 'asc' },
+          { resource: 'asc' },
+          { action: 'asc' },
+        ],
+      });
+
+      return permissions;
+    } catch (error) {
+      this.logger.error(`Failed to get permissions: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get permission by ID
+   */
+  async getPermissionById(id: string) {
+    try {
+      const permission = await this.prisma.permission.findUnique({
+        where: { id },
+      });
+
+      if (!permission) {
+        throw new NotFoundException(`Permission with ID '${id}' not found`);
+      }
+
+      return permission;
+    } catch (error) {
+      this.logger.error(`Failed to get permission by ID: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get permission by code
+   */
+  async getPermissionByCode(code: string) {
+    try {
+      const permission = await this.prisma.permission.findUnique({
+        where: { code },
+      });
+
+      if (!permission) {
+        throw new NotFoundException(`Permission with code '${code}' not found`);
+      }
+
+      return permission;
+    } catch (error) {
+      this.logger.error(`Failed to get permission by code: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Update permission
+   */
+  async updatePermission(id: string, data: UpdatePermissionDto) {
+    try {
+      const existing = await this.prisma.permission.findUnique({
+        where: { id },
+      });
+
+      if (!existing) {
+        throw new NotFoundException(`Permission with ID '${id}' not found`);
+      }
+
+      if (existing.isSystem) {
+        throw new ConflictException('Cannot modify system permissions');
+      }
+
+      const permission = await this.prisma.permission.update({
+        where: { id },
+        data,
+      });
+
+      this.logger.log(`Permission updated: ${permission.code}`);
+      return permission;
+    } catch (error) {
+      this.logger.error(`Failed to update permission: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete permission
+   */
+  async deletePermission(id: string) {
+    try {
+      const existing = await this.prisma.permission.findUnique({
+        where: { id },
+        include: {
+          rolePermissions: true,
+        },
+      });
+
+      if (!existing) {
+        throw new NotFoundException(`Permission with ID '${id}' not found`);
+      }
+
+      if (existing.isSystem) {
+        throw new ConflictException('Cannot delete system permissions');
+      }
+
+      if (existing.rolePermissions.length > 0) {
+        throw new ConflictException('Cannot delete permission that is assigned to roles');
+      }
+
+      await this.prisma.permission.delete({
+        where: { id },
+      });
+
+      this.logger.log(`Permission deleted: ${existing.code}`);
+      return { message: 'Permission deleted successfully' };
+    } catch (error) {
+      this.logger.error(`Failed to delete permission: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get permissions grouped by category
+   */
+  async getPermissionsByCategory() {
+    try {
+      const permissions = await this.prisma.permission.findMany({
+        orderBy: [
+          { category: 'asc' },
+          { resource: 'asc' },
+          { action: 'asc' },
+        ],
+      });
+
+      // Group by category
+      const grouped = permissions.reduce((acc, permission) => {
+        if (!acc[permission.category]) {
+          acc[permission.category] = [];
+        }
+        acc[permission.category].push(permission);
+        return acc;
+      }, {} as Record<string, any[]>);
+
+      return grouped;
+    } catch (error) {
+      this.logger.error(`Failed to get permissions by category: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get permissions for a specific role
+   */
+  async getRolePermissions(roleId: string) {
+    try {
+      const rolePermissions = await this.prisma.rolePermission.findMany({
+        where: { roleId },
+        include: {
+          permission: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              description: true,
+              category: true,
+              resource: true,
+              action: true,
+            },
+          },
+        },
+      });
+
+      return rolePermissions.map(rp => rp.permission);
+    } catch (error) {
+      this.logger.error(`Failed to get role permissions: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Seed default permissions
+   */
+  async seedDefaultPermissions() {
+    const defaultPermissions = [
+      // Account Management
+      { code: 'accounts.view', name: 'View Accounts', category: 'Account Management', resource: 'accounts', action: 'view' },
+      { code: 'accounts.create', name: 'Create Account', category: 'Account Management', resource: 'accounts', action: 'create' },
+      { code: 'accounts.update', name: 'Update Account', category: 'Account Management', resource: 'accounts', action: 'update' },
+      { code: 'accounts.delete', name: 'Delete Account', category: 'Account Management', resource: 'accounts', action: 'delete' },
+      { code: 'accounts.bulk_upload', name: 'Bulk Upload Accounts', category: 'Account Management', resource: 'accounts', action: 'bulk_upload' },
+
+      // Call Management
+      { code: 'calls.view', name: 'View Calls', category: 'Call Management', resource: 'calls', action: 'view' },
+      { code: 'calls.create', name: 'Create Call', category: 'Call Management', resource: 'calls', action: 'create' },
+      { code: 'calls.update', name: 'Update Call', category: 'Call Management', resource: 'calls', action: 'update' },
+      { code: 'calls.delete', name: 'Delete Call', category: 'Call Management', resource: 'calls', action: 'delete' },
+
+      // User Management
+      { code: 'users.view', name: 'View Users', category: 'User Management', resource: 'users', action: 'view' },
+      { code: 'users.create', name: 'Create User', category: 'User Management', resource: 'users', action: 'create' },
+      { code: 'users.update', name: 'Update User', category: 'User Management', resource: 'users', action: 'update' },
+      { code: 'users.delete', name: 'Delete User', category: 'User Management', resource: 'users', action: 'delete' },
+
+      // Role Management
+      { code: 'roles.view', name: 'View Roles', category: 'Role Management', resource: 'roles', action: 'view' },
+      { code: 'roles.create', name: 'Create Role', category: 'Role Management', resource: 'roles', action: 'create' },
+      { code: 'roles.update', name: 'Update Role', category: 'Role Management', resource: 'roles', action: 'update' },
+      { code: 'roles.delete', name: 'Delete Role', category: 'Role Management', resource: 'roles', action: 'delete' },
+      { code: 'roles.assign', name: 'Assign Roles', category: 'Role Management', resource: 'roles', action: 'assign' },
+
+      // Audit Logs
+      { code: 'audit.view', name: 'View Audit Logs', category: 'Audit', resource: 'audit', action: 'view' },
+      { code: 'audit.export', name: 'Export Audit Logs', category: 'Audit', resource: 'audit', action: 'export' },
+
+      // System Administration
+      { code: 'system.settings', name: 'System Settings', category: 'System', resource: 'system', action: 'settings', isSystem: true },
+      { code: 'system.maintenance', name: 'System Maintenance', category: 'System', resource: 'system', action: 'maintenance', isSystem: true },
+    ];
+
+    try {
+      const createdPermissions = [];
+      
+      for (const permData of defaultPermissions) {
+        const existing = await this.prisma.permission.findUnique({
+          where: { code: permData.code },
+        });
+
+        if (!existing) {
+          const permission = await this.prisma.permission.create({
+            data: permData,
+          });
+          createdPermissions.push(permission);
+        }
+      }
+
+      this.logger.log(`Seeded ${createdPermissions.length} default permissions`);
+      return createdPermissions;
+    } catch (error) {
+      this.logger.error(`Failed to seed default permissions: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+}

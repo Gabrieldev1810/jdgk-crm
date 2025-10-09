@@ -14,8 +14,15 @@ class ApiClient {
   }> = [];
 
   constructor() {
+    const apiUrl = getApiUrl();
+    console.log('🔧 API Client Configuration:', {
+      baseURL: apiUrl,
+      isDev: import.meta.env.DEV,
+      mode: import.meta.env.MODE
+    });
+    
     this.instance = axios.create({
-      baseURL: getApiUrl(),
+      baseURL: apiUrl,
       timeout: config.api.timeout,
       withCredentials: true, // Include cookies for httpOnly refresh tokens
       headers: {

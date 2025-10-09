@@ -1,0 +1,228 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateAuditLogDto, AuditLogQueryDto, AuditAction } from './dto/audit.dto';
+
+@Injectable()
+export class AuditService {
+  private readonly logger = new Logger(AuditService.name);
+
+  constructor(private prisma: PrismaService) {}
+
+  /**
+   * Create an audit log entry
+   */
+  async createAuditLog(data: CreateAuditLogDto) {
+    try {
+      const auditLog = await this.prisma.auditLog.create({
+        data: {
+          actorId: data.userId,
+          action: data.action,
+          entity: data.resource,
+          entityId: data.resourceId,
+          newValue: data.details ? JSON.stringify(data.details) : null,
+          ipAddress: data.ipAddress,
+          userAgent: data.userAgent,
+        },
+        include: {
+          actor: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      this.logger.log(`Audit log created: ${data.action} on ${data.resource} by user ${data.userId}`);
+      return auditLog;
+    } catch (error) {
+      this.logger.error(`Failed to create audit log: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get audit logs with filtering and pagination
+   */
+  async getAuditLogs(query: AuditLogQueryDto) {
+    const { userId, action, resource, startDate, endDate, page = 1, limit = 20 } = query;
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    
+    if (userId) where.actorId = userId;
+    if (action) where.action = action;
+    if (resource) where.entity = resource;
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate);
+      if (endDate) where.createdAt.lte = new Date(endDate);
+    }
+
+    try {
+      const [logs, total] = await Promise.all([
+        this.prisma.auditLog.findMany({
+          where,
+          include: {
+            actor: {
+              select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        this.prisma.auditLog.count({ where }),
+      ]);
+
+      // Parse JSON details for each log
+      const logsWithParsedDetails = logs.map(log => ({
+        ...log,
+        details: log.newValue ? JSON.parse(log.newValue) : null,
+      }));
+
+      return {
+        data: logsWithParsedDetails,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get audit logs: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Get audit logs for a specific user
+   */
+  async getUserAuditLogs(userId: string, page: number = 1, limit: number = 20) {
+    return this.getAuditLogs({ userId, page, limit });
+  }
+
+  /**
+   * Get audit logs for a specific resource
+   */
+  async getResourceAuditLogs(resource: string, resourceId?: string, page: number = 1, limit: number = 20) {
+    const query: AuditLogQueryDto = { resource, page, limit };
+    
+    // Note: We'll need to add resourceId filtering in getAuditLogs if needed
+    return this.getAuditLogs(query);
+  }
+
+  /**
+   * Helper method to log user actions automatically
+   */
+  async logUserAction(
+    userId: string,
+    action: AuditAction,
+    resource: string,
+    resourceId?: string,
+    details?: any,
+    req?: any
+  ) {
+    const auditData: CreateAuditLogDto = {
+      userId,
+      action,
+      resource,
+      resourceId,
+      details,
+      ipAddress: req?.ip || req?.connection?.remoteAddress,
+      userAgent: req?.get?.('User-Agent'),
+    };
+
+    return this.createAuditLog(auditData);
+  }
+
+  /**
+   * Get audit statistics
+   */
+  async getAuditStats(days: number = 30) {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    try {
+      const [totalLogs, actionStats, resourceStats, userStats] = await Promise.all([
+        // Total logs in period
+        this.prisma.auditLog.count({
+          where: { createdAt: { gte: since } },
+        }),
+
+        // Action breakdown
+        this.prisma.auditLog.groupBy({
+          by: ['action'],
+          where: { createdAt: { gte: since } },
+          _count: { action: true },
+        }),
+
+        // Resource breakdown
+        this.prisma.auditLog.groupBy({
+          by: ['entity'],
+          where: { createdAt: { gte: since } },
+          _count: { entity: true },
+        }),
+
+        // Most active users
+        this.prisma.auditLog.groupBy({
+          by: ['actorId'],
+          where: { createdAt: { gte: since } },
+          _count: { actorId: true },
+          orderBy: { _count: { actorId: 'desc' } },
+          take: 10,
+        }),
+      ]);
+
+      return {
+        period: `${days} days`,
+        totalLogs,
+        actionBreakdown: actionStats.map(stat => ({
+          action: stat.action,
+          count: stat._count.action,
+        })),
+        resourceBreakdown: resourceStats.map(stat => ({
+          resource: stat.entity,
+          count: stat._count.entity,
+        })),
+        topUsers: userStats.map(stat => ({
+          userId: stat.actorId,
+          count: stat._count.actorId,
+        })),
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get audit stats: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete old audit logs (for data retention)
+   */
+  async cleanupOldLogs(daysToKeep: number = 365) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+
+    try {
+      const result = await this.prisma.auditLog.deleteMany({
+        where: {
+          createdAt: { lt: cutoffDate },
+        },
+      });
+
+      this.logger.log(`Cleaned up ${result.count} audit logs older than ${daysToKeep} days`);
+      return result;
+    } catch (error) {
+      this.logger.error(`Failed to cleanup old audit logs: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+}

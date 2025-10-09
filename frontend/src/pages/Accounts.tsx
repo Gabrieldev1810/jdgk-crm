@@ -61,174 +61,7 @@ const convertApiAccountToLegacy = (apiAccount: ApiAccount): Account => ({
   updatedAt: apiAccount.updatedAt
 })
 
-// PRD-aligned mock data for bank collections - Philippine banks
-const mockAccounts: Account[] = [
-  {
-    id: "1",
-    accountId: "RCBC-2024-001234",
-    name: "Juan Carlos Santos",
-    phoneNumbers: ["+63 917 123 4567", "+63 998 765 4321"],
-    email: "juan.santos@gmail.com",
-    balance: 125000.00,
-    dueDate: "2024-01-15",
-    bankPartner: "Rcbc",
-    status: "touched",
-    agent: "Maria Fernandez",
-    lastContact: "2024-01-10",
-    remarks: "Customer requested payment plan",
-    createdAt: "2024-01-01",
-    updatedAt: "2024-01-10"
-  },
-  {
-    id: "2",
-    accountId: "FDL-2024-001235", 
-    name: "Maria Elena Cruz",
-    phoneNumbers: ["+63 929 234 5678"],
-    email: "maria.cruz@yahoo.com",
-    balance: 65000.00,
-    dueDate: "2024-01-20",
-    bankPartner: "Fundline",
-    status: "ptp",
-    agent: "Roberto Villanueva",
-    lastContact: "2024-01-12",
-    remarks: "Promised to pay by Friday",
-    createdAt: "2024-01-02",
-    updatedAt: "2024-01-12"
-  },
-  {
-    id: "3",
-    accountId: "AMG-2024-001236",
-    name: "Jose Rizal Mercado", 
-    phoneNumbers: ["+63 945 345 6789", "+63 917 345 1111", "+63 998 345 2222"],
-    balance: 185000.00,
-    dueDate: "2024-02-01",
-    bankPartner: "Amg",
-    status: "untouched",
-    agent: "Ana Reyes",
-    createdAt: "2024-01-03",
-    updatedAt: "2024-01-03"
-  },
-  {
-    id: "4",
-    accountId: "SMB-2024-001237",
-    name: "Isabella Gonzales",
-    phoneNumbers: ["+63 956 456 7890"], 
-    email: "isabella.gonzales@hotmail.com",
-    balance: 45000.50,
-    dueDate: "2024-01-05",
-    bankPartner: "Simbayanan",
-    status: "collected",
-    agent: "Miguel Torres",
-    lastContact: "2024-01-08",
-    createdAt: "2024-01-01",
-    updatedAt: "2024-01-08"
-  },
-  {
-    id: "5",
-    accountId: "FLX-2024-001238",
-    name: "Antonio Luna Del Pilar",
-    phoneNumbers: ["+63 967 567 8901", "+63 929 567 0000"],
-    email: "antonio.luna@gmail.com", 
-    balance: 275000.00,
-    dueDate: "2024-01-18",
-    bankPartner: "Flexi",
-    status: "not_collected",
-    agent: "Carmen Aquino",
-    lastContact: "2024-01-11",
-    remarks: "Customer disputes amount - legal review needed",
-    createdAt: "2024-01-01",
-    updatedAt: "2024-01-11"
-  },
-  {
-    id: "6",
-    accountId: "TFS-2024-001239",
-    name: "Esperanza Bonifacio",
-    phoneNumbers: ["+63 978 678 9012"],
-    balance: 95000.00,
-    dueDate: "2024-01-25",
-    bankPartner: "Tfs",
-    status: "untouched",
-    agent: "Luis Morales",
-    createdAt: "2024-01-05",
-    updatedAt: "2024-01-05"
-  },
-  {
-    id: "7",
-    accountId: "JAC-2024-001240",
-    name: "Fernando Poe Santos",
-    phoneNumbers: ["+63 989 789 0123", "+63 917 789 4567"],
-    email: "fernando.poe@gmail.com",
-    balance: 150000.00,
-    dueDate: "2024-01-30",
-    bankPartner: "JACCS",
-    status: "touched",
-    agent: "Sofia Mendoza",
-    lastContact: "2024-01-13",
-    remarks: "Partial payment received",
-    createdAt: "2024-01-06",
-    updatedAt: "2024-01-13"
-  },
-  {
-    id: "8",
-    accountId: "RDW-2024-001241",
-    name: "Gabriela Silang Lopez",
-    phoneNumbers: ["+63 990 890 1234"],
-    email: "gabriela.silang@outlook.com",
-    balance: 80000.75,
-    dueDate: "2024-02-05",
-    bankPartner: "Radiowealth",
-    status: "ptp",
-    agent: "Diego Ramos",
-    lastContact: "2024-01-14",
-    remarks: "Will pay next Monday",
-    createdAt: "2024-01-07",
-    updatedAt: "2024-01-14"
-  },
-  {
-    id: "9",
-    accountId: "CTC-2024-001242",
-    name: "Andres Bonifacio Cruz",
-    phoneNumbers: ["+63 917 901 2345", "+63 998 901 5678"],
-    balance: 220000.00,
-    dueDate: "2024-02-10",
-    bankPartner: "Ctbc",
-    status: "untouched",
-    agent: "Luz Rodriguez",
-    createdAt: "2024-01-08",
-    updatedAt: "2024-01-08"
-  },
-  {
-    id: "10",
-    accountId: "EWB-2024-001243",
-    name: "Corazon Angeles Reyes",
-    phoneNumbers: ["+63 929 012 3456"],
-    email: "corazon.reyes@gmail.com",
-    balance: 110000.25,
-    dueDate: "2024-02-15",
-    bankPartner: "Ewb",
-    status: "collected",
-    agent: "Pablo Martinez",
-    lastContact: "2024-01-15",
-    createdAt: "2024-01-09",
-    updatedAt: "2024-01-15"
-  },
-  {
-    id: "11",
-    accountId: "BDO-2024-001244",
-    name: "Emilio Aguinaldo Hernandez",
-    phoneNumbers: ["+63 945 123 4567", "+63 956 123 7890"],
-    email: "emilio.aguinaldo@yahoo.com",
-    balance: 195000.50,
-    dueDate: "2024-02-20",
-    bankPartner: "Bdo",
-    status: "touched",
-    agent: "Teresa Villanueva",
-    lastContact: "2024-01-16",
-    remarks: "Customer relocated - new address needed",
-    createdAt: "2024-01-10",
-    updatedAt: "2024-01-16"
-  }
-]
+// Removed mock data - all data should come from API
 
 function getStatusColor(status: Account["status"]) {
   switch (status) {
@@ -276,6 +109,7 @@ export default function Accounts() {
   const [showCallHistory, setShowCallHistory] = useState(false)
   const [showUpdateStatus, setShowUpdateStatus] = useState(false)
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 10,
@@ -360,8 +194,7 @@ export default function Accounts() {
     } catch (err) {
       console.error('Failed to load accounts:', err)
       setError('Failed to load accounts. Please try again.')
-      // Fallback to mock data for now
-      setAccounts(mockAccounts.slice(0, 10))
+      setAccounts([]) // No fallback to mock data
     } finally {
       setLoading(false)
     }
@@ -374,6 +207,40 @@ export default function Accounts() {
       setStatistics(stats)
     } catch (err) {
       console.error('Failed to load statistics:', err)
+    }
+  }
+
+  // Export accounts to CSV
+  const handleExport = async () => {
+    try {
+      setIsExporting(true)
+      setError(null)
+      
+      // Use current search and filter parameters for export
+      const params: AccountSearchParams = {}
+      if (searchQuery) {
+        params.search = searchQuery
+      }
+      // Note: bankPartner filter is handled at the frontend level, not in the API
+      
+      const response = await accountService.exportAccounts(params)
+      
+      // Create and download the CSV file
+      const blob = new Blob([response.data], { type: response.contentType })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = response.filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      
+    } catch (err) {
+      console.error('Failed to export accounts:', err)
+      setError('Failed to export accounts. Please try again.')
+    } finally {
+      setIsExporting(false)
     }
   }
 
@@ -590,9 +457,14 @@ export default function Accounts() {
             </p>
           </div>
           <div className="flex space-x-4">
-            <Button variant="outline" className="glass-light border-glass-border">
+            <Button 
+              variant="outline" 
+              className="glass-light border-glass-border"
+              onClick={handleExport}
+              disabled={isExporting}
+            >
               <Download className="w-4 h-4 mr-2" />
-              Export
+              {isExporting ? 'Exporting...' : 'Export'}
             </Button>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>

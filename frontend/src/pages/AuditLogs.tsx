@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -13,134 +13,32 @@ import {
   Trash2,
   Plus,
   Settings,
-  Key
+  Key,
+  Loader2
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { rbacService } from "@/services/rbac"
+import { useToast } from "@/hooks/use-toast"
 
 interface AuditLog {
   id: string
-  timestamp: string
-  actor: string
+  createdAt: string
   action: string
-  resource: string
-  resourceType: "role" | "permission" | "user_role" | "settings"
-  details: string
-  ipAddress: string
-  status: "success" | "failed"
+  entity: string
+  entityId?: string
+  oldValue?: string
+  newValue?: string
+  ipAddress?: string
+  userAgent?: string
+  sessionId?: string
+  metadata?: string
+  actor?: {
+    id: string
+    email: string
+    firstName: string
+    lastName: string
+  }
 }
-
-const mockAuditLogs: AuditLog[] = [
-  {
-    id: "1",
-    timestamp: "2024-03-15 14:23:45",
-    actor: "admin@jdgk.com",
-    action: "Created Role",
-    resource: "Team Lead",
-    resourceType: "role",
-    details: "Created new role with 8 permissions",
-    ipAddress: "192.168.1.100",
-    status: "success"
-  },
-  {
-    id: "2",
-    timestamp: "2024-03-15 14:20:12",
-    actor: "admin@jdgk.com",
-    action: "Updated Permissions",
-    resource: "Agent",
-    resourceType: "role",
-    details: "Added 'accounts.edit' permission",
-    ipAddress: "192.168.1.100",
-    status: "success"
-  },
-  {
-    id: "3",
-    timestamp: "2024-03-15 13:45:30",
-    actor: "manager@jdgk.com",
-    action: "Assigned Role",
-    resource: "juan.delacruz@jdgk.com",
-    resourceType: "user_role",
-    details: "Assigned 'Agent' role to user",
-    ipAddress: "192.168.1.105",
-    status: "success"
-  },
-  {
-    id: "4",
-    timestamp: "2024-03-15 13:30:18",
-    actor: "manager@jdgk.com",
-    action: "Attempted Privilege Escalation",
-    resource: "Super Admin",
-    resourceType: "role",
-    details: "Tried to assign Super Admin role - BLOCKED",
-    ipAddress: "192.168.1.105",
-    status: "failed"
-  },
-  {
-    id: "5",
-    timestamp: "2024-03-15 11:15:22",
-    actor: "admin@jdgk.com",
-    action: "Removed Role",
-    resource: "maria.santos@jdgk.com",
-    resourceType: "user_role",
-    details: "Revoked 'Manager' role from user",
-    ipAddress: "192.168.1.100",
-    status: "success"
-  },
-  {
-    id: "6",
-    timestamp: "2024-03-15 10:45:55",
-    actor: "admin@jdgk.com",
-    action: "Deleted Role",
-    resource: "Temporary Access",
-    resourceType: "role",
-    details: "Deleted role with 3 permissions",
-    ipAddress: "192.168.1.100",
-    status: "success"
-  },
-  {
-    id: "7",
-    timestamp: "2024-03-15 10:12:08",
-    actor: "admin@jdgk.com",
-    action: "Created Permission",
-    resource: "reports.advanced",
-    resourceType: "permission",
-    details: "Created new permission for advanced reporting",
-    ipAddress: "192.168.1.100",
-    status: "success"
-  },
-  {
-    id: "8",
-    timestamp: "2024-03-15 09:30:40",
-    actor: "system",
-    action: "Permission Cache Invalidated",
-    resource: "All Users",
-    resourceType: "settings",
-    details: "Cleared permission cache after role update",
-    ipAddress: "127.0.0.1",
-    status: "success"
-  },
-  {
-    id: "9",
-    timestamp: "2024-03-14 16:55:33",
-    actor: "admin@jdgk.com",
-    action: "Updated Role",
-    resource: "Viewer",
-    resourceType: "role",
-    details: "Modified role description and permissions",
-    ipAddress: "192.168.1.100",
-    status: "success"
-  },
-  {
-    id: "10",
-    timestamp: "2024-03-14 15:20:15",
-    actor: "manager@jdgk.com",
-    action: "Failed Role Assignment",
-    resource: "pedro.reyes@jdgk.com",
-    resourceType: "user_role",
-    details: "Insufficient permissions to assign role",
-    ipAddress: "192.168.1.105",
-    status: "failed"
-  },
-]
 
 const actionIcons = {
   "Created Role": Plus,
@@ -158,19 +56,43 @@ const actionIcons = {
 export default function AuditLogs() {
   const [searchQuery, setSearchQuery] = useState("")
   const [filterType, setFilterType] = useState<string>("all")
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
+  const [loading, setLoading] = useState(true)
+  const { toast } = useToast()
+
+  useEffect(() => {
+    loadAuditLogs()
+  }, [])
+
+  const loadAuditLogs = async () => {
+    try {
+      setLoading(true)
+      const logs = await rbacService.getAuditLogs()
+      setAuditLogs(logs || [])
+    } catch (error) {
+      console.error('Failed to load audit logs:', error)
+      toast({
+        title: "Error loading audit logs",
+        description: "Failed to fetch audit logs from server",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
   const [filterStatus, setFilterStatus] = useState<string>("all")
 
-  const filteredLogs = mockAuditLogs.filter(log => {
+  const filteredLogs = auditLogs.filter(log => {
+    const actorName = log.actor ? `${log.actor.firstName} ${log.actor.lastName}` : 'System'
     const matchesSearch = 
-      log.actor.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      actorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.resource.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.details.toLowerCase().includes(searchQuery.toLowerCase())
+      log.entity.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (log.newValue && log.newValue.toLowerCase().includes(searchQuery.toLowerCase()))
 
-    const matchesType = filterType === "all" || log.resourceType === filterType
-    const matchesStatus = filterStatus === "all" || log.status === filterStatus
+    const matchesType = filterType === "all" || log.entity === filterType
 
-    return matchesSearch && matchesType && matchesStatus
+    return matchesSearch && matchesType
   })
 
   const getActionIcon = (action: string) => {
@@ -186,6 +108,40 @@ export default function AuditLogs() {
           Complete audit trail of all role and permission changes
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Security Metrics</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="p-4 border rounded-lg">
+              <div className="text-2xl font-bold">
+                {auditLogs.length}
+              </div>
+              <div className="text-sm text-muted-foreground">Total Actions</div>
+            </div>
+            <div className="p-4 border rounded-lg">
+              <div className="text-2xl font-bold text-primary">
+                {auditLogs.filter(l => l.action.includes("CREATE") || l.action.includes("UPDATE")).length}
+              </div>
+              <div className="text-sm text-muted-foreground">Modifications</div>
+            </div>
+            <div className="p-4 border rounded-lg">
+              <div className="text-2xl font-bold">
+                {new Set(auditLogs.map(l => l.actor?.email || 'System')).size}
+              </div>
+              <div className="text-sm text-muted-foreground">Unique Actors</div>
+            </div>
+            <div className="p-4 border rounded-lg">
+              <div className="text-2xl font-bold">
+                {auditLogs.filter(l => l.action.includes("ESCALATION") || l.action.includes("ADMIN")).length}
+              </div>
+              <div className="text-sm text-muted-foreground">Security Events</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -226,103 +182,73 @@ export default function AuditLogs() {
         <CardContent>
           <ScrollArea className="h-[600px] pr-4">
             <div className="space-y-3">
-              {filteredLogs.map((log) => {
-                const Icon = getActionIcon(log.action)
-                return (
-                  <Card key={log.id} className="border">
-                    <CardContent className="p-4">
-                      <div className="flex items-start gap-4">
-                        <div className={`p-2 rounded-lg ${
-                          log.status === "failed" 
-                            ? "bg-destructive/10" 
-                            : "bg-primary/10"
-                        }`}>
-                          <Icon className={`h-5 w-5 ${
-                            log.status === "failed" 
-                              ? "text-destructive" 
-                              : "text-primary"
-                          }`} />
-                        </div>
-
-                        <div className="flex-1 space-y-2">
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h3 className="font-semibold">{log.action}</h3>
-                                <Badge 
-                                  variant={log.status === "success" ? "default" : "destructive"}
-                                  className="text-xs"
-                                >
-                                  {log.status}
-                                </Badge>
-                                <Badge variant="outline" className="text-xs">
-                                  {log.resourceType}
-                                </Badge>
-                              </div>
-                              <p className="text-sm text-muted-foreground mt-1">
-                                <span className="font-medium">{log.actor}</span> → {log.resource}
-                              </p>
-                            </div>
-                            <span className="text-xs text-muted-foreground whitespace-nowrap">
-                              {log.timestamp}
-                            </span>
-                          </div>
-
-                          <p className="text-sm">{log.details}</p>
-
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span>IP: {log.ipAddress}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
-
-              {filteredLogs.length === 0 && (
-                <div className="text-center py-12">
-                  <FileText className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
-                  <h3 className="mt-4 text-lg font-semibold">No logs found</h3>
-                  <p className="text-muted-foreground">Try adjusting your filters</p>
+              {loading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                  <span>Loading audit logs...</span>
                 </div>
+              ) : filteredLogs.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>No audit logs found</p>
+                  {auditLogs.length === 0 && (
+                    <p className="text-sm mt-1">Try performing some actions to generate audit logs</p>
+                  )}
+                </div>
+              ) : (
+                filteredLogs.map((log) => {
+                  const Icon = getActionIcon(log.action)
+                  const actorName = log.actor ? `${log.actor.firstName} ${log.actor.lastName}` : 'System'
+                  const formattedDate = new Date(log.createdAt).toLocaleString()
+                  
+                  return (
+                    <Card key={log.id} className="border">
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-4">
+                          <div className="p-2 rounded-lg bg-primary/10">
+                            <Icon className="h-5 w-5 text-primary" />
+                          </div>
+
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="font-semibold">{log.action}</h3>
+                                  <Badge variant="outline" className="text-xs">
+                                    {log.entity}
+                                  </Badge>
+                                </div>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  <span className="font-medium">{actorName}</span> → {log.entity}
+                                  {log.entityId && (
+                                    <span className="text-xs ml-1">({log.entityId.slice(0, 8)}...)</span>
+                                  )}
+                                </p>
+                              </div>
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                {formattedDate}
+                              </span>
+                            </div>
+
+                            {log.newValue && (
+                              <p className="text-sm bg-muted/50 p-2 rounded text-muted-foreground">
+                                {JSON.parse(log.newValue || '{}').message || 'Action completed'}
+                              </p>
+                            )}
+
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              {log.ipAddress && <span>IP: {log.ipAddress}</span>}
+                              {log.sessionId && <span>Session: {log.sessionId.slice(0, 8)}...</span>}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })
               )}
             </div>
           </ScrollArea>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Security Metrics</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="p-4 border rounded-lg">
-              <div className="text-2xl font-bold">
-                {mockAuditLogs.filter(l => l.status === "success").length}
-              </div>
-              <div className="text-sm text-muted-foreground">Successful Actions</div>
-            </div>
-            <div className="p-4 border rounded-lg">
-              <div className="text-2xl font-bold text-destructive">
-                {mockAuditLogs.filter(l => l.status === "failed").length}
-              </div>
-              <div className="text-sm text-muted-foreground">Failed Attempts</div>
-            </div>
-            <div className="p-4 border rounded-lg">
-              <div className="text-2xl font-bold">
-                {new Set(mockAuditLogs.map(l => l.actor)).size}
-              </div>
-              <div className="text-sm text-muted-foreground">Unique Actors</div>
-            </div>
-            <div className="p-4 border rounded-lg">
-              <div className="text-2xl font-bold">
-                {mockAuditLogs.filter(l => l.action.includes("Privilege Escalation")).length}
-              </div>
-              <div className="text-sm text-muted-foreground">Privilege Escalation Attempts</div>
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>

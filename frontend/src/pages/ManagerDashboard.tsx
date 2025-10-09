@@ -23,6 +23,7 @@ import {
   User,
   Building2
 } from "lucide-react"
+import { dashboardService, DashboardMetrics } from "@/services/dashboard"
 
 interface ManagerKPICardProps {
   title: string
@@ -95,10 +96,37 @@ export default function ManagerDashboard() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [selectedMetric, setSelectedMetric] = useState<string>("batch")
   const [selectedBank, setSelectedBank] = useState<string>("all")
+  const [dashboardData, setDashboardData] = useState<DashboardMetrics | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000)
     return () => clearInterval(timer)
+  }, [])
+
+  // Load dashboard data
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const data = await dashboardService.getDashboardMetrics()
+        setDashboardData(data)
+      } catch (err) {
+        console.error('Failed to load dashboard data:', err)
+        setError('Failed to load dashboard data')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadDashboardData()
+    
+    // Refresh data every 5 minutes
+    const dataRefreshInterval = setInterval(loadDashboardData, 5 * 60 * 1000)
+    
+    return () => clearInterval(dataRefreshInterval)
   }, [])
   
   // Bank partners list
@@ -123,87 +151,87 @@ export default function ManagerDashboard() {
     navigate(`/accounts${params}`)
   }
   
-  // Mock data - Manager specific KPIs per PRD
-  const batchMetrics = [
+  // Generate metrics from real dashboard data
+  const batchMetrics = dashboardData ? [
     {
       title: "Accounts Uploaded",
-      value: "2,847",
-      change: "+245 this week",
+      value: dashboardData.totalAccounts.toLocaleString(),
+      change: `+${dashboardData.newAccountsThisWeek} this week`,
       changeType: "positive" as const,
       icon: <Upload className="h-4 w-4 text-accent" />,
       description: "Total active"
     },
     {
       title: "Accounts Touched",
-      value: "1,923",
-      change: "67.5% touch rate",
+      value: dashboardData.touchedAccounts.toLocaleString(),
+      change: `${((dashboardData.touchedAccounts / dashboardData.totalAccounts) * 100).toFixed(1)}% touch rate`,
       changeType: "positive" as const,
       icon: <CheckCircle className="h-4 w-4 text-accent" />,
-      description: "This month"
+      description: "This period"
     },
     {
       title: "Untouched Accounts",
-      value: "924",
-      change: "32.5% remaining",
+      value: (dashboardData.totalAccounts - dashboardData.touchedAccounts).toLocaleString(),
+      change: `${(((dashboardData.totalAccounts - dashboardData.touchedAccounts) / dashboardData.totalAccounts) * 100).toFixed(1)}% remaining`,
       changeType: "neutral" as const,
       icon: <Users className="h-4 w-4 text-warning" />,
       description: "Need attention"
     }
-  ]
+  ] : []
   
-  const callMetrics = [
+  const callMetrics = dashboardData ? [
     {
-      title: "Total Calls",
-      value: "8,456",
-      change: "+15% from last month",
+      title: "Total Calls Today",
+      value: dashboardData.totalCallsToday.toLocaleString(),
+      change: `Weekly: ${dashboardData.totalCallsThisWeek.toLocaleString()}`,
       changeType: "positive" as const,
       icon: <Phone className="h-4 w-4 text-accent" />,
-      description: "This month"
+      description: "Daily volume"
     },
     {
-      title: "Connected Calls",
-      value: "5,234",
-      change: "61.9% connect rate",
+      title: "Contact Rate",
+      value: `${dashboardData.contactRate.toFixed(1)}%`,
+      change: "Connection success",
       changeType: "positive" as const,
       icon: <CheckCircle className="h-4 w-4 text-success" />,
       description: "Successful contacts"
     },
     {
-      title: "PTPs Generated",
-      value: "1,287",
-      change: "+8% vs last month",
-      changeType: "positive" as const,
-      icon: <Target className="h-4 w-4 text-warning" />,
-      description: "Payment promises"
+      title: "Avg Call Duration",
+      value: `${Math.floor(dashboardData.averageCallDuration / 60)}:${(dashboardData.averageCallDuration % 60).toString().padStart(2, '0')}`,
+      change: "Minutes per call",
+      changeType: "neutral" as const,
+      icon: <Clock className="h-4 w-4 text-accent" />,
+      description: "Talk time"
     }
-  ]
+  ] : []
   
-  const financialMetrics = [
+  const financialMetrics = dashboardData ? [
     {
       title: "Total Collections",
-      value: "$287,450",
-      change: "+22% from last month",
+      value: `$${(dashboardData.totalCollected / 1000).toFixed(0)}K`,
+      change: `Rate: ${dashboardData.collectionRate.toFixed(1)}%`,
       changeType: "positive" as const,
       icon: <DollarSign className="h-4 w-4 text-success" />,
-      description: "This month"
+      description: "Total collected"
     },
     {
-      title: "Quota Progress",
-      value: "78%",
-      change: "On track for target",
+      title: "Average Collection",
+      value: `$${dashboardData.averageCollection.toLocaleString()}`,
+      change: "Per successful account",
       changeType: "positive" as const,
       icon: <TrendingUp className="h-4 w-4 text-accent" />,
-      description: "Monthly goal"
+      description: "Collection average"
     },
     {
-      title: "Collection Rate",
-      value: "24.6%",
-      change: "+3.2% improvement",
+      title: "Active Agents",
+      value: `${dashboardData.activeAgents}/${dashboardData.totalAgents}`,
+      change: `${((dashboardData.activeAgents / dashboardData.totalAgents) * 100).toFixed(0)}% active`,
       changeType: "positive" as const,
-      icon: <BarChart3 className="h-4 w-4 text-accent" />,
-      description: "Success ratio"
+      icon: <User className="h-4 w-4 text-accent" />,
+      description: "Agent utilization"
     }
-  ]
+  ] : []
   
   // Metric categories
   const metricCategories = {
@@ -212,14 +240,13 @@ export default function ManagerDashboard() {
     financial: { title: "Financial Metrics", data: financialMetrics }
   }
 
-  // Agent Leaderboard
-  const agentLeaderboard = [
-    { name: "Sarah Johnson", collections: "$45,230", ptps: 156, rate: "82%" },
-    { name: "Mike Rodriguez", collections: "$42,890", ptps: 143, rate: "79%" },
-    { name: "Emma Davis", collections: "$38,760", ptps: 134, rate: "76%" },
-    { name: "John Smith", collections: "$35,420", ptps: 128, rate: "73%" },
-    { name: "Lisa Chen", collections: "$33,180", ptps: 119, rate: "71%" }
-  ]
+  // Agent Leaderboard from real data
+  const agentLeaderboard = dashboardData ? dashboardData.topAgents.map(agent => ({
+    name: agent.name,
+    collections: `$${agent.collections.toLocaleString()}`,
+    ptps: agent.callsToday, // Using calls today as proxy for PTPs until we have that data
+    rate: `${agent.contactRate}%`
+  })) : []
   
   return (
     <div className="min-h-screen bg-background p-4 md:p-6 space-y-4 md:space-y-6 animate-fade-in">
@@ -293,11 +320,43 @@ export default function ManagerDashboard() {
       </div>
 
       {/* KPI Metrics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-        {metricCategories[selectedMetric as keyof typeof metricCategories].data.map((metric, index) => (
-          <ManagerKPICard key={index} {...metric} />
-        ))}
-      </div>
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="glass-card animate-pulse">
+              <CardHeader className="pb-2">
+                <div className="h-4 bg-muted rounded w-24"></div>
+              </CardHeader>
+              <CardContent>
+                <div className="h-8 bg-muted rounded w-20 mb-2"></div>
+                <div className="h-3 bg-muted rounded w-32"></div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : error ? (
+        <Card className="glass-card border-destructive">
+          <CardContent className="p-6">
+            <div className="text-center text-destructive">
+              <p className="text-sm">{error}</p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="mt-2"
+                onClick={() => window.location.reload()}
+              >
+                Retry
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : dashboardData ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+          {metricCategories[selectedMetric as keyof typeof metricCategories].data.map((metric, index) => (
+            <ManagerKPICard key={index} {...metric} />
+          ))}
+        </div>
+      ) : null}
 
       {/* Main Dashboard Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-4 md:mb-6">
@@ -320,27 +379,46 @@ export default function ManagerDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              <div className="text-xl md:text-2xl font-bold text-foreground font-mono">$287,450</div>
-              <div className="flex items-center text-sm">
-                <ArrowUp className="h-3 w-3 text-success mr-1" />
-                <span className="text-success font-medium">2.1%</span>
-                <span className="text-muted-foreground ml-1">vs last week</span>
-              </div>
-              <div className="text-xs text-muted-foreground mb-3">Sales from 1-6 Dec, 2020</div>
-              {/* Simple bar chart representation */}
-              <div className="flex items-end space-x-1 h-12 md:h-16">
-                {[40, 65, 45, 70, 85, 50, 75, 60, 80, 90, 70, 85].map((height, i) => (
-                  <div 
-                    key={i} 
-                    className="bg-accent rounded-sm flex-1 opacity-80 hover:opacity-100 transition-opacity" 
-                    style={{ height: `${height}%` }}
-                  />
-                ))}
-              </div>
-              <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                <span>• Last 6 days</span>
-                <span>• Last Week</span>
-              </div>
+              {loading ? (
+                <div className="animate-pulse">
+                  <div className="h-8 bg-muted rounded w-32 mb-2"></div>
+                  <div className="h-4 bg-muted rounded w-24 mb-3"></div>
+                  <div className="h-16 bg-muted rounded"></div>
+                </div>
+              ) : dashboardData ? (
+                <>
+                  <div className="text-xl md:text-2xl font-bold text-foreground font-mono">
+                    ${(dashboardData.totalCollected / 1000).toFixed(0)}K
+                  </div>
+                  <div className="flex items-center text-sm">
+                    <ArrowUp className="h-3 w-3 text-success mr-1" />
+                    <span className="text-success font-medium">{dashboardData.collectionRate.toFixed(1)}%</span>
+                    <span className="text-muted-foreground ml-1">collection rate</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mb-3">
+                    Collections from {dashboardData.totalAccounts.toLocaleString()} accounts
+                  </div>
+                  {/* Timeline visualization */}
+                  <div className="flex items-end space-x-1 h-12 md:h-16">
+                    {dashboardData.collectionsTimeline.map((data, i) => {
+                      const maxValue = Math.max(...dashboardData.collectionsTimeline.map(d => d.value));
+                      const height = maxValue > 0 ? (data.value / maxValue) * 100 : 0;
+                      return (
+                        <div 
+                          key={i} 
+                          className="bg-accent rounded-sm flex-1 opacity-80 hover:opacity-100 transition-opacity" 
+                          style={{ height: `${Math.max(height, 10)}%` }}
+                          title={`${data.label}: $${data.value.toLocaleString()}`}
+                        />
+                      );
+                    })}
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground mt-2">
+                    <span>• Last 7 days</span>
+                    <span>• Trending up</span>
+                  </div>
+                </>
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -519,22 +597,46 @@ export default function ManagerDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {[
-                { name: "Sarah Johnson", amount: "$48,230", avatar: "SJ" },
-                { name: "Mike Rodriguez", amount: "$42,890", avatar: "MR" },
-                { name: "Emma Davis", amount: "$38,760", avatar: "ED" },
-                { name: "John Smith", amount: "$35,420", avatar: "JS" }
-              ].map((agent, index) => (
-                <div key={agent.name} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-glass-light/20 transition-colors">
-                  <div className="w-8 h-8 bg-accent rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-accent-foreground text-xs font-medium">{agent.avatar}</span>
+              {loading ? (
+                [...Array(4)].map((_, i) => (
+                  <div key={i} className="flex items-center space-x-3 p-2 animate-pulse">
+                    <div className="w-8 h-8 bg-muted rounded-full"></div>
+                    <div className="flex-1">
+                      <div className="h-4 bg-muted rounded w-24"></div>
+                    </div>
+                    <div className="h-4 bg-muted rounded w-16"></div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-foreground truncate">{agent.name}</div>
-                  </div>
-                  <div className="text-sm font-mono font-bold text-success flex-shrink-0">{agent.amount}</div>
+                ))
+              ) : agentLeaderboard.length > 0 ? (
+                agentLeaderboard.map((agent, index) => {
+                  const initials = agent.name
+                    .split(' ')
+                    .map(n => n[0])
+                    .join('')
+                    .toUpperCase()
+                    .slice(0, 2);
+                  
+                  return (
+                    <div key={agent.name} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-glass-light/20 transition-colors">
+                      <div className="w-8 h-8 bg-accent rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-accent-foreground text-xs font-medium">{initials}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-foreground truncate">{agent.name}</div>
+                        <div className="text-xs text-muted-foreground">Contact Rate: {agent.rate}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-mono font-bold text-success flex-shrink-0">{agent.collections}</div>
+                        <div className="text-xs text-muted-foreground">{agent.ptps} calls today</div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center text-muted-foreground py-4">
+                  <p className="text-sm">No agent data available</p>
                 </div>
-              ))}
+              )}
             </div>
           </CardContent>
         </Card>
@@ -553,7 +655,26 @@ export default function ManagerDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              <div className="text-xl md:text-2xl font-bold text-foreground font-mono">24</div>
+              {loading ? (
+                <div className="animate-pulse">
+                  <div className="h-8 bg-muted rounded w-12 mb-2"></div>
+                  <div className="h-4 bg-muted rounded w-20"></div>
+                </div>
+              ) : dashboardData ? (
+                <>
+                  <div className="text-xl md:text-2xl font-bold text-foreground font-mono">
+                    {dashboardData.totalAgents}
+                  </div>
+                  <div className="flex items-center text-sm">
+                    <span className="text-success font-medium">{dashboardData.activeAgents} active</span>
+                    <span className="text-muted-foreground ml-1">
+                      • {((dashboardData.activeAgents / dashboardData.totalAgents) * 100).toFixed(0)}% utilization
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="text-xl md:text-2xl font-bold text-foreground font-mono">--</div>
+              )}
               <div className="flex items-center text-sm">
                 <ArrowUp className="h-3 w-3 text-success mr-1" />
                 <span className="text-success font-medium">8.2%</span>

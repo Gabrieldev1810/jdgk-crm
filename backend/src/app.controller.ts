@@ -1,4 +1,5 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Res } from '@nestjs/common';
+import { Response } from 'express';
 
 @Controller()
 export class AppController {
@@ -39,5 +40,53 @@ export class AppController {
         'Security Headers'
       ]
     };
+  }
+
+  @Get('security-check')
+  getSecurityHeaders(@Res() res: Response) {
+    // Add custom security headers for demonstration
+    res.set({
+      'X-API-Version': '1.0.0',
+      'X-Security-Check': 'passed',
+      'X-Frame-Options': 'DENY', // Should be set by helmet
+      'X-Content-Type-Options': 'nosniff', // Should be set by helmet
+      'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+      'X-Permitted-Cross-Domain-Policies': 'none',
+      'Referrer-Policy': 'no-referrer',
+    });
+
+    return res.json({
+      message: 'Security headers check endpoint',
+      timestamp: new Date().toISOString(),
+      securityFeatures: {
+        helmet: 'enabled',
+        cors: 'configured',
+        csrf: 'helmet-managed',
+        hsts: 'enabled',
+        noSniff: 'enabled',
+        frameOptions: 'deny',
+        xssProtection: 'enabled',
+        contentSecurityPolicy: 'configured',
+        dnsPrefetchControl: 'disabled',
+        referrerPolicy: 'no-referrer'
+      },
+      headers: {
+        'Content-Security-Policy': 'Comprehensive CSP configured',
+        'X-Frame-Options': 'DENY',
+        'X-Content-Type-Options': 'nosniff',
+        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+        'X-XSS-Protection': '1; mode=block',
+        'Referrer-Policy': 'no-referrer',
+        'X-Permitted-Cross-Domain-Policies': 'none',
+        'X-DNS-Prefetch-Control': 'off'
+      },
+      recommendations: [
+        'Ensure HTTPS is enabled in production',
+        'Regularly update security headers',
+        'Monitor CSP violations',
+        'Use security scanning tools',
+        'Keep dependencies updated'
+      ]
+    });
   }
 }

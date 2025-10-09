@@ -32,61 +32,8 @@ interface RecordedCall {
   quality: "excellent" | "good" | "fair" | "poor"
 }
 
-// Mock recorded calls data
-const mockRecordedCalls: RecordedCall[] = [
-  {
-    id: "REC-001",
-    accountId: "ACC-001",
-    customerName: "John Smith",
-    phoneNumber: "(555) 123-4567",
-    agentName: "Agent Sarah",
-    startTime: "2024-01-15 14:30:25",
-    duration: 425,
-    disposition: "PAYMENT_ARRANGED",
-    fileUrl: "/recordings/rec-001.wav",
-    fileSize: "8.2 MB",
-    quality: "excellent"
-  },
-  {
-    id: "REC-002", 
-    accountId: "ACC-002",
-    customerName: "Emily Davis",
-    phoneNumber: "(555) 456-7890",
-    agentName: "Agent Mike",
-    startTime: "2024-01-15 13:15:10",
-    duration: 180,
-    disposition: "NO_ANSWER",
-    fileUrl: "/recordings/rec-002.wav", 
-    fileSize: "3.5 MB",
-    quality: "good"
-  },
-  {
-    id: "REC-003",
-    accountId: "ACC-003", 
-    customerName: "Robert Wilson",
-    phoneNumber: "(555) 789-0123",
-    agentName: "Agent Lisa",
-    startTime: "2024-01-15 12:45:33",
-    duration: 650,
-    disposition: "PAYMENT_FULL",
-    fileUrl: "/recordings/rec-003.wav",
-    fileSize: "12.6 MB", 
-    quality: "excellent"
-  },
-  {
-    id: "REC-004",
-    accountId: "ACC-005",
-    customerName: "Maria Garcia", 
-    phoneNumber: "(555) 321-6547",
-    agentName: "Agent Tom",
-    startTime: "2024-01-15 11:20:15",
-    duration: 95,
-    disposition: "CALLBACK_REQUESTED",
-    fileUrl: "/recordings/rec-004.wav",
-    fileSize: "1.8 MB",
-    quality: "fair"
-  }
-]
+// Removed mock data - should load from API
+const mockRecordedCalls: RecordedCall[] = [] // Removed mock data
 
 function formatDuration(seconds: number) {
   const hours = Math.floor(seconds / 3600)
@@ -129,7 +76,7 @@ function getDispositionColor(disposition: string) {
 }
 
 export default function CallCenter() {
-  const [recordedCalls] = useState(mockRecordedCalls)
+  const [recordedCalls] = useState<RecordedCall[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCall, setSelectedCall] = useState<RecordedCall | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)

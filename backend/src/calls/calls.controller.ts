@@ -132,4 +132,70 @@ export class CallsController {
   async remove(@Param('id') id: string) {
     return this.callsService.remove(id);
   }
+
+  // VICIdial Integration Endpoints
+  @Post('vicidial/initiate')
+  @ApiOperation({ summary: 'Initiate a call through VICIdial' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Call initiated successfully',
+  })
+  async initiateCall(@Body() initiateCallDto: {
+    phoneNumber: string;
+    agentId: string;
+    accountId: string;
+  }) {
+    return this.callsService.initiateVicidialCall(
+      initiateCallDto.phoneNumber,
+      initiateCallDto.agentId,
+      initiateCallDto.accountId
+    );
+  }
+
+  @Post('vicidial/hangup/:callId')
+  @ApiOperation({ summary: 'Hangup a VICIdial call' })
+  @ApiParam({ name: 'callId', description: 'Call ID' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Call ended successfully',
+  })
+  async hangupCall(@Param('callId') callId: string) {
+    return this.callsService.hangupVicidialCall(callId);
+  }
+
+  @Get('vicidial/status/:callId')
+  @ApiOperation({ summary: 'Get VICIdial call status' })
+  @ApiParam({ name: 'callId', description: 'Call ID' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Call status retrieved successfully',
+  })
+  async getCallStatus(@Param('callId') callId: string) {
+    return this.callsService.getVicidialCallStatus(callId);
+  }
+
+  @Get(':id/recording')
+  @ApiOperation({ summary: 'Get call recording' })
+  @ApiParam({ name: 'id', description: 'Call ID' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Call recording retrieved successfully',
+  })
+  async getRecording(@Param('id') id: string) {
+    return this.callsService.getCallRecording(id);
+  }
+
+  @Post(':id/recording')
+  @ApiOperation({ summary: 'Upload call recording' })
+  @ApiParam({ name: 'id', description: 'Call ID' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Call recording uploaded successfully',
+  })
+  async uploadRecording(
+    @Param('id') id: string,
+    @Body() recordingData: { recordingUrl: string }
+  ) {
+    return this.callsService.updateCallRecording(id, recordingData.recordingUrl);
+  }
 }

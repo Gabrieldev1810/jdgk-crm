@@ -9,6 +9,7 @@ import { join } from 'path';
 import { AppModule } from './app.module';
 import { RootController } from './root.controller';
 import { NotFoundExceptionFilter } from './common/filters/not-found-exception.filter';
+import { getSecurityConfig, SECURITY_HEADERS, validateSecurityHeaders } from './config/security.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -43,41 +44,35 @@ async function bootstrap() {
   // Serve static files from public directory
   app.use('/public', express.static(join(__dirname, '..', 'public')));
   
-  // Security middleware
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'"],
-        imgSrc: ["'self'", "data:", "https:"],
-      },
-    },
-  }));
+  // Get security configuration based on environment
+  const securityConfig = getSecurityConfig(configService);
+  
+  // Enhanced Security middleware with comprehensive helmet configuration
+  app.use(helmet(securityConfig.helmet));
+  
+  // Add custom security headers
+  app.use((req, res, next) => {
+    // Add custom security headers
+    Object.entries(SECURITY_HEADERS).forEach(([key, value]) => {
+      res.setHeader(key, value);
+    });
+    
+    // Log security headers validation in development
+    if (configService.get('NODE_ENV') === 'development') {
+      const isValid = validateSecurityHeaders(res.getHeaders());
+      if (!isValid) {
+        console.warn('⚠️  Some security headers are missing');
+      }
+    }
+    
+    next();
+  });
   
   // Cookie parser for JWT tokens
   app.use(cookieParser());
   
-  // CORS configuration
-  app.enableCors({
-    origin: [
-      configService.get('FRONTEND_URL') || 'http://localhost:8080',
-      'https://staging.digiedgesolutions.cloud', // Staging domain
-      'http://staging.digiedgesolutions.cloud',  // Staging domain (HTTP)
-      'https://digiedgesolutions.cloud',          // Production domain
-      'http://digiedgesolutions.cloud',           // Production domain (HTTP)
-      'http://localhost:5173', // Vite default dev port
-      'http://localhost:3000', // React default dev port  
-      'http://localhost:3001', // Alternative React port
-      'http://localhost:8080', // Current configured port
-      'http://localhost:8081',
-      'http://localhost:8082',
-      'http://localhost:8083'
-    ],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  });
+  // CORS configuration using security config
+  app.enableCors(securityConfig.cors);
   
   // Global validation pipe
   app.useGlobalPipes(new ValidationPipe({

@@ -1,6 +1,4 @@
-import { config } from '../config/environment';
-
-const API_BASE_URL = `${config.api.baseUrl}${config.api.prefix}`;
+const API_BASE_URL = '/api';
 
 export interface ApiResponse<T> {
   data?: T;

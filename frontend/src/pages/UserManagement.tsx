@@ -1,10 +1,18 @@
-import { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Switch } from "@/components/ui/switch"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useToast } from "@/hooks/use-toast"
+import { usersService, rbacService } from "@/services"
+import type { User as ApiUser } from "@/services/users"
+import type { Role as ApiRole } from "@/services/rbac"
 import { 
   Users, 
   Plus,
@@ -21,93 +29,62 @@ import {
   Phone
 } from "lucide-react"
 
-interface User {
-  id: string
-  name: string
-  email: string
-  role: "admin" | "manager" | "agent"
-  status: "active" | "inactive" | "suspended"
-  lastLogin: string
-  callsToday: number
-  totalCalls: number
-  joinDate: string
-  avatar?: string
+interface User extends ApiUser {
+  name?: string; // Computed field from firstName + lastName
+  callsToday?: number; // Will be added later
+  totalCalls?: number; // Will be added later
+  joinDate?: string; // Maps to createdAt
+  avatar?: string; // Will be added later
+  status?: "active" | "inactive" | "suspended"; // Maps to isActive
 }
 
-// Mock data
-const mockUsers: User[] = [
-  {
-    id: "USR-001",
-    name: "John Admin",
-    email: "admin@bank.com",
-    role: "admin",
-    status: "active",
-    lastLogin: "2024-01-15 14:30",
-    callsToday: 0,
-    totalCalls: 156,
-    joinDate: "2023-06-15",
-    avatar: ""
-  },
-  {
-    id: "USR-002",
-    name: "Sarah Manager",
-    email: "manager@bank.com", 
-    role: "manager",
-    status: "active",
-    lastLogin: "2024-01-15 13:45",
-    callsToday: 12,
-    totalCalls: 2847,
-    joinDate: "2023-08-20",
-    avatar: ""
-  },
-  {
-    id: "USR-003",
-    name: "Mike Agent",
-    email: "agent@bank.com",
-    role: "agent", 
-    status: "active",
-    lastLogin: "2024-01-15 14:25",
-    callsToday: 47,
-    totalCalls: 8924,
-    joinDate: "2023-09-10",
-    avatar: ""
-  },
-  {
-    id: "USR-004",
-    name: "Lisa Agent",
-    email: "lisa.agent@bank.com",
-    role: "agent",
-    status: "active", 
-    lastLogin: "2024-01-15 12:15",
-    callsToday: 38,
-    totalCalls: 6745,
-    joinDate: "2023-10-05",
-    avatar: ""
-  },
-  {
-    id: "USR-005",
-    name: "Tom Agent",
-    email: "tom.agent@bank.com",
-    role: "agent",
-    status: "inactive",
-    lastLogin: "2024-01-10 16:30",
-    callsToday: 0,
-    totalCalls: 4532,
-    joinDate: "2023-11-12",
-    avatar: ""
-  }
-]
+interface CreateUserFormData {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  role: string;  // Backend expects single role string
+  isActive: boolean;
+}
 
-function getRoleColor(role: User["role"]) {
+interface EditUserFormData {
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  role?: string;  // Single role like create user
+  isActive?: boolean;
+}
+
+// Helper function to transform API user to UI user
+const transformUser = (apiUser: ApiUser): User => ({
+  ...apiUser,
+  name: `${apiUser.firstName} ${apiUser.lastName}`,
+  status: apiUser.isActive ? "active" : "inactive",
+  joinDate: new Date(apiUser.createdAt).toLocaleDateString(),
+  callsToday: 0, // TODO: Integrate with call statistics
+  totalCalls: 0, // TODO: Integrate with call statistics
+  avatar: "",
+});
+
+// Component helper functions
+function getRoleColor(roles?: Array<{name: string}>) {
+  if (!roles || roles.length === 0) return "bg-muted/10 text-muted-foreground border-muted/20"
+  
+  const role = roles[0]?.name?.toLowerCase();
   switch (role) {
-    case "admin": return "bg-destructive/10 text-destructive border-destructive/20"
-    case "manager": return "bg-warning/10 text-warning border-warning/20"
-    case "agent": return "bg-success/10 text-success border-success/20"
-    default: return "bg-muted/10 text-muted-foreground border-muted/20"
+    case "admin": 
+    case "super_admin": 
+      return "bg-destructive/10 text-destructive border-destructive/20"
+    case "manager": 
+      return "bg-warning/10 text-warning border-warning/20"
+    case "agent": 
+      return "bg-success/10 text-success border-success/20"
+    default: 
+      return "bg-muted/10 text-muted-foreground border-muted/20"
   }
 }
 
-function getStatusColor(status: User["status"]) {
+function getStatusColor(status?: User["status"]) {
   switch (status) {
     case "active": return "bg-success/10 text-success border-success/20"
     case "inactive": return "bg-muted/10 text-muted-foreground border-muted/20"
@@ -116,7 +93,7 @@ function getStatusColor(status: User["status"]) {
   }
 }
 
-function getStatusIcon(status: User["status"]) {
+function getStatusIcon(status?: User["status"]) {
   switch (status) {
     case "active": return <UserCheck className="w-3 h-3" />
     case "inactive": return <UserX className="w-3 h-3" />
@@ -126,31 +103,206 @@ function getStatusIcon(status: User["status"]) {
 }
 
 export default function UserManagement() {
-  const [users, setUsers] = useState(mockUsers)
+  const [users, setUsers] = useState<User[]>([])
+  const [roles, setRoles] = useState<ApiRole[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [showEditDialog, setShowEditDialog] = useState(false)
+  const [editUserData, setEditUserData] = useState<EditUserFormData>({
+    email: '',
+    firstName: '',
+    lastName: '',
+    role: '',
+    isActive: true
+  })
+  const { toast } = useToast()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedRole, setSelectedRole] = useState<string>("all")
 
+  // Development auto-login for testing
+  useEffect(() => {
+    const autoLogin = async () => {
+      try {
+        console.log("🔧 Starting auto-login process...");
+        console.log("🔧 Environment - DEV mode:", import.meta.env.DEV);
+        
+        // Direct API call to test login
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: "admin@bank.com",
+            password: "demo123"
+          }),
+        });
+        
+        console.log("🔧 Login response status:", response.status);
+        
+        if (response.ok) {
+          const result = await response.json();
+          console.log("🔧 Login success:", result);
+          
+          // Store token if provided
+          if (result.accessToken) {
+            localStorage.setItem('dial_craft_token', result.accessToken);
+            
+            // RBAC integration can be enhanced later
+            console.log("🔧 Auth token stored, system ready for user management");
+          }
+          
+          toast({
+            title: "Development Login",
+            description: "Successfully logged in as admin for testing",
+          });
+          
+          // Load data after successful login
+          setTimeout(() => loadData(), 500);
+        } else {
+          const error = await response.text();
+          console.error("❌ Login failed:", response.status, error);
+          toast({
+            title: "Login Failed", 
+            description: `Login failed with status ${response.status}`,
+            variant: "destructive"
+          });
+        }
+      } catch (error) {
+        console.error("❌ Auto-login error:", error);
+        toast({
+          title: "Auto-login Error",
+          description: "Network error during login. Check console for details.",
+          variant: "destructive"
+        });
+      }
+    };
+    
+    // Run auto-login only in development
+    if (import.meta.env.DEV) {
+      autoLogin();
+    }
+  }, []);
+
+  // Load users and roles data
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      console.log("🔄 Loading users and roles data...");
+      
+      const [usersData, rolesData] = await Promise.all([
+        usersService.getUsers(),
+        rbacService.getRoles().catch(error => {
+          console.error("🚫 Failed to load roles:", error);
+          // Return empty array as fallback
+          return [];
+        })
+      ]);
+      
+      console.log("📊 Users data loaded:", usersData);
+      console.log("📊 Roles data loaded:", rolesData);
+      console.log("🔧 Number of roles:", rolesData.length);
+      
+      // Log role selection status
+      if (rolesData.length === 0) {
+        console.log("⚠️ No RBAC roles loaded, using fallback roles");
+      } else {
+        console.log("✅ RBAC roles loaded successfully");
+      }
+      
+      setUsers(usersData.map(transformUser));
+      setRoles(rolesData);
+      
+      toast({
+        title: "Data Loaded",
+        description: `Loaded ${usersData.length} users and ${rolesData.length} roles`,
+      });
+    } catch (error) {
+      console.error('❌ Error loading data:', error);
+      toast({
+        title: "Error",
+        description: `Failed to load users and roles: ${error.message || error}`,
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleUserStatus = async (userId: string) => {
+    try {
+      const user = users.find(u => u.id === userId);
+      if (!user) return;
+
+      await usersService.updateUser(userId, {
+        isActive: !user.isActive
+      });
+
+      // Update local state
+      setUsers(prev => prev.map(u => 
+        u.id === userId 
+          ? { ...u, isActive: !u.isActive, status: !u.isActive ? "active" : "inactive" }
+          : u
+      ));
+
+      toast({
+        title: "Success",
+        description: `User ${!user.isActive ? "activated" : "deactivated"} successfully`
+      });
+    } catch (error) {
+      console.error('Error toggling user status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update user status",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleEditUser = (user: User) => {
+    // Populate edit form with user data
+    setEditUserData({
+      email: user.email || '',
+      firstName: user.firstName || '',
+      lastName: user.lastName || '',
+      role: user.role || '',
+      isActive: user.isActive ?? true
+    });
+    setEditingUser(user);
+    setShowEditDialog(true);
+  };
+
+
   const filteredUsers = users.filter(user => {
-    const matchesSearch = user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    const matchesSearch = user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          user.email.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesRole = selectedRole === "all" || user.role === selectedRole
+    const matchesRole = selectedRole === "all" || 
+                       (user.roles?.some(role => role.name === selectedRole) || false)
     return matchesSearch && matchesRole
   })
-
-  const toggleUserStatus = (userId: string) => {
-    setUsers(prev => prev.map(user => 
-      user.id === userId 
-        ? { ...user, status: user.status === "active" ? "inactive" : "active" }
-        : user
-    ))
-  }
 
   const stats = {
     totalUsers: users.length,
     activeUsers: users.filter(u => u.status === "active").length,
-    admins: users.filter(u => u.role === "admin").length,
-    managers: users.filter(u => u.role === "manager").length,
-    agents: users.filter(u => u.role === "agent").length
+    admins: users.filter(u => u.roles?.some(role => role.name.toLowerCase().includes("admin"))).length,
+    managers: users.filter(u => u.roles?.some(role => role.name.toLowerCase().includes("manager"))).length,
+    agents: users.filter(u => u.roles?.some(role => role.name.toLowerCase().includes("agent"))).length
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent mx-auto mb-4"></div>
+          <p>Loading users...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -166,10 +318,31 @@ export default function UserManagement() {
               Manage system users and access permissions
             </p>
           </div>
-          <Button className="bg-gradient-accent hover:shadow-accent">
-            <Plus className="w-4 h-4 mr-2" />
-            Add User
-          </Button>
+          <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+            <DialogTrigger asChild>
+              <Button className="bg-gradient-accent hover:shadow-accent">
+                <Plus className="w-4 h-4 mr-2" />
+                Add User
+              </Button>
+            </DialogTrigger>
+            <CreateUserDialog 
+              roles={roles} 
+              onSuccess={loadData}
+              onClose={() => setShowCreateDialog(false)}
+            />
+          </Dialog>
+
+          {/* Edit User Dialog */}
+          <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+            <EditUserDialog 
+              user={editingUser}
+              roles={roles}
+              editUserData={editUserData}
+              setEditUserData={setEditUserData}
+              onSuccess={loadData}
+              onClose={() => setShowEditDialog(false)}
+            />
+          </Dialog>
         </div>
 
         {/* Search and Filters */}
@@ -189,9 +362,11 @@ export default function UserManagement() {
             onChange={(e) => setSelectedRole(e.target.value)}
           >
             <option value="all">All Roles</option>
-            <option value="admin">Admin</option>
-            <option value="manager">Manager</option>
-            <option value="agent">Agent</option>
+            {roles.map(role => (
+              <option key={role.id} value={role.name}>
+                {role.name.charAt(0).toUpperCase() + role.name.slice(1)}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -324,10 +499,21 @@ export default function UserManagement() {
                       </div>
                     </td>
                     <td className="py-4 px-4">
-                      <Badge className={getRoleColor(user.role)}>
-                        <Shield className="w-3 h-3 mr-1" />
-                        {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
-                      </Badge>
+                      <div className="flex flex-wrap gap-1">
+                        {user.roles && user.roles.length > 0 ? (
+                          user.roles.map(role => (
+                            <Badge key={role.id} className={getRoleColor([role])}>
+                              <Shield className="w-3 h-3 mr-1" />
+                              {role.name.charAt(0).toUpperCase() + role.name.slice(1)}
+                            </Badge>
+                          ))
+                        ) : (
+                          <Badge className={getRoleColor()}>
+                            <Shield className="w-3 h-3 mr-1" />
+                            No Role
+                          </Badge>
+                        )}
+                      </div>
                     </td>
                     <td className="py-4 px-4">
                       <Badge className={getStatusColor(user.status)}>
@@ -360,14 +546,19 @@ export default function UserManagement() {
                           onCheckedChange={() => toggleUserStatus(user.id)}
                           className="data-[state=checked]:bg-accent"
                         />
-                        <Button variant="outline" size="sm" className="glass-light border-glass-border">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="glass-light border-glass-border"
+                          onClick={() => handleEditUser(user)}
+                        >
                           <Edit className="w-3 h-3" />
                         </Button>
                         <Button 
                           variant="outline" 
                           size="sm" 
                           className="glass-light border-glass-border text-destructive hover:bg-destructive/10"
-                          disabled={user.role === "admin"}
+                          disabled={user.roles?.some(role => role.name.toLowerCase().includes("admin")) || false}
                         >
                           <Trash2 className="w-3 h-3" />
                         </Button>
@@ -386,7 +577,10 @@ export default function UserManagement() {
               <p className="text-muted-foreground mb-4">
                 No users match your current search and filter criteria.
               </p>
-              <Button className="bg-gradient-accent hover:shadow-accent">
+              <Button 
+                className="bg-gradient-accent hover:shadow-accent"
+                onClick={() => setShowCreateDialog(true)}
+              >
                 <Plus className="w-4 h-4 mr-2" />
                 Add New User
               </Button>
@@ -396,4 +590,346 @@ export default function UserManagement() {
       </Card>
     </div>
   )
+}
+
+// Create User Dialog Component
+interface CreateUserDialogProps {
+  roles: ApiRole[];
+  onSuccess: () => void;
+  onClose: () => void;
+}
+
+function CreateUserDialog({ roles, onSuccess, onClose }: CreateUserDialogProps) {
+  // Default roles fallback when RBAC is not available
+  const DEFAULT_ROLES = [
+    { id: 'agent', name: 'AGENT', description: 'Call center agent' },
+    { id: 'manager', name: 'MANAGER', description: 'Team manager' },
+    { id: 'admin', name: 'ADMIN', description: 'System administrator' },
+    { id: 'super_admin', name: 'SUPER_ADMIN', description: 'Super administrator' }
+  ];
+
+  // Get available roles - use RBAC roles if available, otherwise use defaults
+  const availableRoles = roles.length > 0 ? roles : DEFAULT_ROLES;
+
+  // Get default role from available roles - prefer AGENT, or use first available
+  const getDefaultRole = () => {
+    const agentRole = availableRoles.find(r => r.name === 'AGENT');
+    return agentRole ? agentRole.name : (availableRoles.length > 0 ? availableRoles[0].name : 'AGENT');
+  };
+
+  const [formData, setFormData] = useState<CreateUserFormData>({
+    email: '',
+    password: '',
+    firstName: '',
+    lastName: '',
+    role: getDefaultRole(),  // Dynamic default role from database
+    isActive: true
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { toast } = useToast();
+
+  // Update role when roles are loaded and current role is empty
+  useEffect(() => {
+    if (availableRoles.length > 0 && !formData.role) {
+      setFormData(prev => ({ ...prev, role: getDefaultRole() }));
+    }
+  }, [roles, formData.role]); // Keep roles as dependency to trigger when RBAC loads
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      console.log('🔧 Creating user with data:', formData);
+      
+      // Get the stored token
+      const token = localStorage.getItem('dial_craft_token');
+      console.log('🔧 Using token:', token ? 'Token present' : 'No token');
+
+      // Direct fetch for better error handling
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(formData)
+      });
+
+      console.log('🔧 Create user response status:', response.status);
+      console.log('🔧 Create user response headers:', Object.fromEntries(response.headers.entries()));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('🚫 User creation failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorBody: errorText
+        });
+        throw new Error(`User creation failed: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const newUser = await response.json();
+      console.log('✅ User created successfully:', newUser);
+
+      toast({
+        title: "Success",
+        description: "User created successfully"
+      });
+      onSuccess();
+      onClose();
+      // Reset form
+      setFormData({
+        email: '',
+        password: '',
+        firstName: '',
+        lastName: '',
+        role: getDefaultRole(),
+        isActive: true
+      });
+    } catch (error) {
+      console.error('🚫 Error creating user:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create user",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Role handling simplified to single role selection
+
+  return (
+    <DialogContent className="sm:max-w-md">
+      <DialogHeader>
+        <DialogTitle>Create New User</DialogTitle>
+      </DialogHeader>
+      
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="firstName">First Name</Label>
+            <Input
+              id="firstName"
+              value={formData.firstName}
+              onChange={(e) => setFormData(prev => ({ ...prev, firstName: e.target.value }))}
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor="lastName">Last Name</Label>
+            <Input
+              id="lastName"
+              value={formData.lastName}
+              onChange={(e) => setFormData(prev => ({ ...prev, lastName: e.target.value }))}
+              required
+            />
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            value={formData.email}
+            onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+            required
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            type="password"
+            value={formData.password}
+            onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+            required
+            minLength={8}
+          />
+        </div>
+
+        <div>
+          <Label>Role</Label>
+          <Select
+            value={formData.role}
+            onValueChange={(value) => setFormData(prev => ({ ...prev, role: value }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select a role" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableRoles.map(role => (
+                <SelectItem key={role.id} value={role.name}>
+                  {role.name} {role.description && `- ${role.description}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="isActive"
+            checked={formData.isActive}
+            onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isActive: !!checked }))}
+          />
+          <Label htmlFor="isActive">Active User</Label>
+        </div>
+
+        <div className="flex justify-end space-x-2">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Creating..." : "Create User"}
+          </Button>
+        </div>
+      </form>
+    </DialogContent>
+  );
+}
+
+// Edit User Dialog Component
+interface EditUserDialogProps {
+  user: User | null;
+  roles: ApiRole[];
+  editUserData: EditUserFormData;
+  setEditUserData: (data: EditUserFormData | ((prev: EditUserFormData) => EditUserFormData)) => void;
+  onSuccess: () => void;
+  onClose: () => void;
+}
+
+function EditUserDialog({ user, roles, editUserData, setEditUserData, onSuccess, onClose }: EditUserDialogProps) {
+  const { toast } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!user || !editUserData.firstName || !editUserData.lastName || !editUserData.email || !editUserData.role) {
+      toast({
+        title: "Validation Error",
+        description: "All fields are required",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const updateData = {
+        email: editUserData.email,
+        firstName: editUserData.firstName,
+        lastName: editUserData.lastName,
+        role: editUserData.role,
+        isActive: editUserData.isActive
+      };
+
+      // Use the proper users service instead of manual fetch
+      await usersService.updateUser(user.id, updateData);
+
+      toast({
+        title: "Success",
+        description: "User updated successfully"
+      });
+
+      onSuccess();
+      onClose();
+    } catch (error) {
+      console.error('Error updating user:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update user",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <DialogContent className="sm:max-w-md">
+      <DialogHeader>
+        <DialogTitle>Edit User</DialogTitle>
+      </DialogHeader>
+      
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="editFirstName">First Name</Label>
+            <Input
+              id="editFirstName"
+              value={editUserData.firstName || ''}
+              onChange={(e) => setEditUserData(prev => ({ ...prev, firstName: e.target.value }))}
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor="editLastName">Last Name</Label>
+            <Input
+              id="editLastName"
+              value={editUserData.lastName || ''}
+              onChange={(e) => setEditUserData(prev => ({ ...prev, lastName: e.target.value }))}
+              required
+            />
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="editEmail">Email</Label>
+          <Input
+            id="editEmail"
+            type="email"
+            value={editUserData.email || ''}
+            onChange={(e) => setEditUserData(prev => ({ ...prev, email: e.target.value }))}
+            required
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="editRole">Role</Label>
+          <Select
+            value={editUserData.role || ''}
+            onValueChange={(value) => setEditUserData(prev => ({ ...prev, role: value }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select role" />
+            </SelectTrigger>
+            <SelectContent>
+              {roles.map((role) => (
+                <SelectItem key={role.id} value={role.name}>
+                  {role.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            id="editIsActive"
+            checked={editUserData.isActive || false}
+            onChange={(e) => setEditUserData(prev => ({ ...prev, isActive: e.target.checked }))}
+            className="rounded border-gray-300"
+          />
+          <Label htmlFor="editIsActive">User is active</Label>
+        </div>
+
+        <div className="flex justify-end space-x-2 pt-4">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Updating..." : "Update User"}
+          </Button>
+        </div>
+      </form>
+    </DialogContent>
+  );
 }
