@@ -1,8 +1,12 @@
 FROM node:18-alpine
 
-# Install essential system dependencies for Prisma and PostgreSQL client
-# Using minimal package set to avoid repository issues
-RUN apk add --no-cache curl openssl postgresql-client
+# Install essential system dependencies for Prisma
+# Only install what's absolutely necessary for production
+RUN apk update && apk add --no-cache \
+    curl \
+    openssl \
+    dumb-init \
+    && rm -rf /var/cache/apk/*
 
 WORKDIR /app
 
@@ -38,9 +42,10 @@ USER nestjs
 # Expose port
 EXPOSE 3000
 
-# Health check with very extended startup time for PostgreSQL connection
-HEALTHCHECK --interval=45s --timeout=20s --start-period=120s --retries=6 \
+# Health check with extended startup time for database connections
+HEALTHCHECK --interval=30s --timeout=15s --start-period=90s --retries=3 \
   CMD curl -f http://localhost:3000/health || curl -f http://localhost:3000/ || exit 1
 
-# Start the application with database initialization
+# Start the application with proper signal handling
+ENTRYPOINT ["dumb-init", "--"]
 CMD ["./start.sh"]
