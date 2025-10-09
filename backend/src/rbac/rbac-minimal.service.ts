@@ -525,7 +525,7 @@ export class RbacMinimalService {
    */
   async assignAdminUsersToAdministratorRole() {
     try {
-      // Find all users with legacy admin roles
+      // Find all users with legacy admin roles or specific admin emails
       const adminUsers = await this.prisma.user.findMany({
         where: {
           OR: [
@@ -533,6 +533,9 @@ export class RbacMinimalService {
             { role: 'ADMIN' },
             { role: 'Administrator' },
             { email: { contains: 'admin' } },
+            { email: 'admin@bank.com' },
+            { email: 'admin@dialcraft.com' },
+            { email: { startsWith: 'admin@' } },
           ],
         },
         select: {
