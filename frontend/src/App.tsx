@@ -8,6 +8,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { auth } from "@/services";
 import type { User } from "@/services";
+import { useUserPermissions } from "@/hooks/useUserPermissions";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import AgentDashboard from "./pages/AgentDashboard";
@@ -31,6 +32,9 @@ const queryClient = new QueryClient();
 const App = () => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Get user permissions
+  const { permissions: userPermissions, hasPermission } = useUserPermissions(user?.id || null);
   
   useEffect(() => {
     // Initialize authentication state with timeout
@@ -105,7 +109,8 @@ const App = () => {
             ) : (
               <AppLayout 
                 userEmail={user.email} 
-                userRole={user.role} 
+                userRole={user.role}
+                userPermissions={userPermissions.map(p => p.code)}
                 onLogout={handleLogout}
               >
                 <Routes>

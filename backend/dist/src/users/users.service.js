@@ -87,6 +87,80 @@ let UsersService = class UsersService {
             },
         });
     }
+    async assignRoleToUser(userId, roleId, assignedById) {
+        await this.prismaService.userRole.create({
+            data: {
+                userId,
+                roleId,
+                assignedById,
+                isActive: true,
+            },
+        });
+    }
+    async removeRoleFromUser(userId, roleId) {
+        await this.prismaService.userRole.updateMany({
+            where: {
+                userId,
+                roleId,
+            },
+            data: {
+                isActive: false,
+            },
+        });
+    }
+    async getUserRoles(userId) {
+        const userRoles = await this.prismaService.userRole.findMany({
+            where: {
+                userId,
+                isActive: true,
+            },
+            include: {
+                role: {
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                        isActive: true,
+                    },
+                },
+            },
+        });
+        return userRoles.map(ur => ur.role);
+    }
+    async updateUserRoles(userId, roleIds, assignedById) {
+        await this.prismaService.userRole.updateMany({
+            where: { userId },
+            data: { isActive: false },
+        });
+        if (roleIds.length > 0) {
+            await this.prismaService.userRole.createMany({
+                data: roleIds.map(roleId => ({
+                    userId,
+                    roleId,
+                    assignedById,
+                    isActive: true,
+                })),
+            });
+        }
+    }
+    async getUserPermissions(userId) {
+        try {
+            const permissions = await this.prismaService.$queryRaw `
+        SELECT DISTINCT p.id, p.code, p.name, p.description, p.category, p.resource, p.action
+        FROM permissions p
+        JOIN role_permissions rp ON p.id = rp.permissionId
+        JOIN roles r ON rp.roleId = r.id
+        JOIN user_roles ur ON r.id = ur.roleId
+        WHERE ur.userId = ${userId}
+          AND ur.isActive = 1
+          AND r.isActive = 1
+      `;
+            return permissions;
+        }
+        catch (error) {
+            throw new Error(`Failed to get user permissions: ${error.message}`);
+        }
+    }
 };
 exports.UsersService = UsersService;
 exports.UsersService = UsersService = __decorate([

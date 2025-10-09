@@ -27,39 +27,7 @@ interface UploadHistory {
   uploader: string
 }
 
-// Mock data
-const mockUploads: UploadHistory[] = [
-  {
-    id: "UP-001",
-    filename: "accounts_batch_january.csv",
-    uploadDate: "2024-01-15 14:30",
-    status: "success",
-    totalRows: 1245,
-    successRows: 1245,
-    errorRows: 0,
-    uploader: "admin@bank.com"
-  },
-  {
-    id: "UP-002", 
-    filename: "new_accounts_batch_2.xlsx",
-    uploadDate: "2024-01-14 09:15",
-    status: "error",
-    totalRows: 892,
-    successRows: 756,
-    errorRows: 136,
-    uploader: "manager@bank.com"
-  },
-  {
-    id: "UP-003",
-    filename: "customer_updates.csv", 
-    uploadDate: "2024-01-13 16:45",
-    status: "success",
-    totalRows: 456,
-    successRows: 456,
-    errorRows: 0,
-    uploader: "admin@bank.com"
-  }
-]
+// Removed mock data - should use API for upload history
 
 function getStatusColor(status: UploadHistory["status"]) {
   switch (status) {
@@ -81,7 +49,7 @@ function getStatusIcon(status: UploadHistory["status"]) {
 
 export default function UploadData() {
   const [isDragOver, setIsDragOver] = useState(false)
-  const [uploadHistory, setUploadHistory] = useState(mockUploads)
+  const [uploadHistory, setUploadHistory] = useState<UploadHistory[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
@@ -193,62 +161,12 @@ export default function UploadData() {
       'REMARKS'
     ]
     
-    // Create sample data rows to show the expected format
+    // Create template data with placeholders - no hardcoded real data
     const sampleData = [
-      [
-        'ACC001',
-        'JDGK Bank',
-        'Metro Manila - Main Branch',
-        'Juan Dela Cruz',
-        '123 Sample St, Quezon City, Philippines',
-        '01/15/2024',
-        '500,000.00',
-        'Home Loan',
-        '10/01/2024',
-        '450,000.00',
-        '425,000.00',
-        'juan.delacruz@email.com',
-        '09171234567',
-        'ACTIVE',
-        '15,000.00',
-        'Regular payment schedule'
-      ],
-      [
-        'ACC002',
-        'JDGK Bank',
-        'Cebu - Branch 1',
-        'Maria Santos',
-        '456 Example Ave, Cebu City, Philippines',
-        '02/20/2024',
-        '300,000.00',
-        'Personal Loan',
-        '09/28/2024',
-        '250,000.00',
-        '235,000.00',
-        'maria.santos@email.com',
-        '09189876543',
-        'ACTIVE',
-        '12,000.00',
-        'On-time payment history'
-      ],
-      [
-        'ACC003',
-        'JDGK Bank',
-        'Davao - Branch 2',
-        'Roberto Garcia',
-        '789 Test Blvd, Davao City, Philippines',
-        '03/10/2024',
-        '750,000.00',
-        'Business Loan',
-        '09/30/2024',
-        '700,000.00',
-        '685,000.00',
-        'roberto.garcia@email.com',
-        '09123456789',
-        'ACTIVE',
-        '18,500.00',
-        'Business expansion loan'
-      ]
+      // Generate example rows with placeholder data
+      headers.map((header, index) => `Example${index + 1}`),
+      headers.map((header, index) => `Sample${index + 1}`),
+      headers.map((header, index) => `Template${index + 1}`)
     ]
     
     // Convert to CSV format with proper escaping

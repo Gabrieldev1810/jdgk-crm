@@ -19,12 +19,19 @@ const auth_service_1 = require("./auth.service");
 const local_auth_guard_1 = require("./guards/local-auth.guard");
 const jwt_auth_guard_1 = require("./guards/jwt-auth.guard");
 const auth_dto_1 = require("./dto/auth.dto");
+const audit_logging_service_1 = require("../common/services/audit-logging.service");
 let AuthController = class AuthController {
-    constructor(authService) {
+    constructor(authService, auditService) {
         this.authService = authService;
+        this.auditService = auditService;
     }
     async login(loginDto, req, res) {
         const result = await this.authService.login(req.user);
+        await this.auditService.logAuthEvent('LOGIN_SUCCESS', req.user.id, req.user.email, req.ip, req.get('User-Agent'), {
+            loginMethod: 'standard',
+            userAgent: req.get('User-Agent'),
+            timestamp: new Date().toISOString(),
+        }, true);
         res.cookie('refreshToken', result.refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
@@ -42,6 +49,14 @@ let AuthController = class AuthController {
             throw new Error('Refresh token not provided');
         }
         const result = await this.authService.refreshToken(refreshToken);
+        try {
+            await this.auditService.logAuthEvent('TOKEN_REFRESH', undefined, undefined, req.ip, req.get('User-Agent'), {
+                timestamp: new Date().toISOString(),
+            }, true);
+        }
+        catch (auditError) {
+            console.warn('Failed to log token refresh:', auditError);
+        }
         res.cookie('refreshToken', result.refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
@@ -57,6 +72,12 @@ let AuthController = class AuthController {
         if (refreshToken) {
             await this.authService.logout(refreshToken);
         }
+        if (req.user) {
+            await this.auditService.logAuthEvent('LOGOUT', req.user.id, req.user.email, req.ip, req.get('User-Agent'), {
+                logoutMethod: 'standard',
+                timestamp: new Date().toISOString(),
+            }, true);
+        }
         res.clearCookie('refreshToken');
         return { message: 'Logout successful' };
     }
@@ -67,6 +88,10 @@ let AuthController = class AuthController {
     }
     async logoutAll(req, res) {
         await this.authService.logoutAll(req.user.id);
+        await this.auditService.logAuthEvent('LOGOUT', req.user.id, req.user.email, req.ip, req.get('User-Agent'), {
+            logoutMethod: 'all_devices',
+            timestamp: new Date().toISOString(),
+        }, true);
         res.clearCookie('refreshToken');
         return { message: 'Logged out from all devices' };
     }
@@ -139,6 +164,7 @@ __decorate([
 exports.AuthController = AuthController = __decorate([
     (0, swagger_1.ApiTags)('auth'),
     (0, common_1.Controller)('auth'),
-    __metadata("design:paramtypes", [auth_service_1.AuthService])
+    __metadata("design:paramtypes", [auth_service_1.AuthService,
+        audit_logging_service_1.AuditLoggingService])
 ], AuthController);
 //# sourceMappingURL=auth.controller.js.map

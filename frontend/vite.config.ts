@@ -1,13 +1,13 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
-import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
-    port: 8080,
+    port: 8080, // Always use port 8080
+    strictPort: true, // Fail if port 8080 is not available instead of trying another port
     proxy: {
       // Proxy API calls to backend during development
       '/api': {
@@ -15,10 +15,13 @@ export default defineConfig(({ mode }) => ({
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path,
+        configure: (proxy, options) => {
+          console.log('🔧 Vite Proxy configured for /api -> http://localhost:3000');
+        }
       },
     },
   },
-  plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
+  plugins: [react()].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

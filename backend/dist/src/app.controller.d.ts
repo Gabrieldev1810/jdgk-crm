@@ -1,3 +1,4 @@
+import { Response } from 'express';
 export declare class AppController {
     getRoot(): {
         message: string;
@@ -23,4 +24,5 @@ export declare class AppController {
         database: string;
         features: string[];
     };
+    getSecurityHeaders(res: Response): Response<any, Record<string, any>>;
 }

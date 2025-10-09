@@ -292,6 +292,172 @@ let CallsService = class CallsService {
             dispositionBreakdown,
         };
     }
+    async initiateVicidialCall(phoneNumber, agentId, accountId) {
+        try {
+            const call = await this.prisma.call.create({
+                data: {
+                    accountId,
+                    agentId,
+                    direction: 'OUTBOUND',
+                    status: 'IN_PROGRESS',
+                    disposition: 'PENDING',
+                    startTime: new Date(),
+                },
+                include: {
+                    agent: {
+                        select: {
+                            id: true,
+                            firstName: true,
+                            lastName: true,
+                            email: true,
+                        },
+                    },
+                    account: {
+                        select: {
+                            id: true,
+                            accountNumber: true,
+                            fullName: true,
+                        },
+                    },
+                },
+            });
+            return {
+                success: true,
+                message: 'Call initiated successfully',
+                callId: call.id,
+                vicidialCallId: `VICI_${Date.now()}`,
+                data: call,
+            };
+        }
+        catch (error) {
+            throw new common_1.BadRequestException(`Failed to initiate call: ${error.message}`);
+        }
+    }
+    async hangupVicidialCall(callId) {
+        try {
+            const call = await this.prisma.call.findUnique({
+                where: { id: callId },
+            });
+            if (!call) {
+                throw new common_1.NotFoundException('Call not found');
+            }
+            const updatedCall = await this.prisma.call.update({
+                where: { id: callId },
+                data: {
+                    status: 'COMPLETED',
+                    endTime: new Date(),
+                    duration: call.startTime ? Math.floor((new Date().getTime() - call.startTime.getTime()) / 1000) : 0,
+                },
+            });
+            return {
+                success: true,
+                message: 'Call ended successfully',
+                data: updatedCall,
+            };
+        }
+        catch (error) {
+            throw new common_1.BadRequestException(`Failed to hangup call: ${error.message}`);
+        }
+    }
+    async getVicidialCallStatus(callId) {
+        try {
+            const call = await this.prisma.call.findUnique({
+                where: { id: callId },
+                include: {
+                    agent: {
+                        select: {
+                            id: true,
+                            firstName: true,
+                            lastName: true,
+                        },
+                    },
+                    account: {
+                        select: {
+                            id: true,
+                            accountNumber: true,
+                            fullName: true,
+                        },
+                    },
+                },
+            });
+            if (!call) {
+                throw new common_1.NotFoundException('Call not found');
+            }
+            return {
+                success: true,
+                message: 'Call status retrieved',
+                data: {
+                    ...call,
+                    vicidialStatus: 'ACTIVE',
+                    estimatedDuration: call.startTime ? Math.floor((new Date().getTime() - call.startTime.getTime()) / 1000) : 0,
+                },
+            };
+        }
+        catch (error) {
+            throw new common_1.BadRequestException(`Failed to get call status: ${error.message}`);
+        }
+    }
+    async getCallRecording(callId) {
+        try {
+            const call = await this.prisma.call.findUnique({
+                where: { id: callId },
+                select: { recordingPath: true, id: true },
+            });
+            if (!call) {
+                throw new common_1.NotFoundException('Call not found');
+            }
+            if (!call.recordingPath) {
+                throw new common_1.NotFoundException('Recording not found for this call');
+            }
+            return {
+                success: true,
+                message: 'Recording retrieved',
+                recordingPath: call.recordingPath,
+                callId: call.id,
+            };
+        }
+        catch (error) {
+            throw new common_1.BadRequestException(`Failed to get recording: ${error.message}`);
+        }
+    }
+    async updateCallRecording(callId, recordingUrl) {
+        try {
+            const call = await this.prisma.call.findUnique({
+                where: { id: callId },
+            });
+            if (!call) {
+                throw new common_1.NotFoundException('Call not found');
+            }
+            const updatedCall = await this.prisma.call.update({
+                where: { id: callId },
+                data: { recordingPath: recordingUrl },
+                include: {
+                    agent: {
+                        select: {
+                            id: true,
+                            firstName: true,
+                            lastName: true,
+                        },
+                    },
+                    account: {
+                        select: {
+                            id: true,
+                            accountNumber: true,
+                            fullName: true,
+                        },
+                    },
+                },
+            });
+            return {
+                success: true,
+                message: 'Recording updated successfully',
+                data: updatedCall,
+            };
+        }
+        catch (error) {
+            throw new common_1.BadRequestException(`Failed to update recording: ${error.message}`);
+        }
+    }
 };
 exports.CallsService = CallsService;
 exports.CallsService = CallsService = __decorate([

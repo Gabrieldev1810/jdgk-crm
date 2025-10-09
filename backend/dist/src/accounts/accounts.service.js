@@ -212,6 +212,79 @@ let AccountsService = class AccountsService {
             }
         };
     }
+    async exportToCsv(filterDto, userId) {
+        try {
+            const where = {};
+            if (filterDto.search) {
+                where.OR = [
+                    { firstName: { contains: filterDto.search, mode: 'insensitive' } },
+                    { lastName: { contains: filterDto.search, mode: 'insensitive' } },
+                    { email: { contains: filterDto.search, mode: 'insensitive' } },
+                    { accountNumber: { contains: filterDto.search, mode: 'insensitive' } },
+                ];
+            }
+            if (filterDto.status) {
+                where.status = filterDto.status;
+            }
+            if (filterDto.priority) {
+                where.priority = filterDto.priority;
+            }
+            if (filterDto.agentId) {
+                where.assignedAgentId = filterDto.agentId;
+            }
+            const accounts = await this.prisma.account.findMany({
+                where,
+                include: {
+                    assignedAgent: {
+                        select: { id: true, firstName: true, lastName: true, email: true }
+                    }
+                },
+                orderBy: { createdAt: 'desc' }
+            });
+            const csvHeaders = [
+                'Account Number',
+                'First Name',
+                'Last Name',
+                'Email',
+                'Original Amount',
+                'Current Balance',
+                'Status',
+                'Priority',
+                'Days Past Due',
+                'Assigned Agent',
+                'Created Date',
+                'Last Updated'
+            ];
+            const csvRows = accounts.map(account => [
+                account.accountNumber || '',
+                account.firstName || '',
+                account.lastName || '',
+                account.email || '',
+                account.originalAmount?.toString() || '0',
+                account.currentBalance?.toString() || '0',
+                account.status || '',
+                account.priority || '',
+                account.daysPastDue?.toString() || '0',
+                account.assignedAgent ? `${account.assignedAgent.firstName} ${account.assignedAgent.lastName}` : '',
+                account.createdAt ? new Date(account.createdAt).toISOString().split('T')[0] : '',
+                account.updatedAt ? new Date(account.updatedAt).toISOString().split('T')[0] : ''
+            ]);
+            const escapeCsvField = (field) => {
+                if (field.includes(',') || field.includes('"') || field.includes('\n')) {
+                    return `"${field.replace(/"/g, '""')}"`;
+                }
+                return field;
+            };
+            const csvContent = [
+                csvHeaders.join(','),
+                ...csvRows.map(row => row.map(escapeCsvField).join(','))
+            ].join('\n');
+            return csvContent;
+        }
+        catch (error) {
+            throw new common_1.BadRequestException(`Failed to export accounts: ${error.message}`);
+        }
+    }
 };
 exports.AccountsService = AccountsService;
 exports.AccountsService = AccountsService = __decorate([

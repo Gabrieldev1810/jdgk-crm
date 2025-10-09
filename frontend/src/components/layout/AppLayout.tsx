@@ -7,15 +7,16 @@ interface AppLayoutProps {
   children: ReactNode
   userEmail?: string
   userRole?: string
+  userPermissions?: string[]
   onLogout: () => void
 }
 
-export function AppLayout({ children, userEmail, userRole, onLogout }: AppLayoutProps) {
+export function AppLayout({ children, userEmail, userRole, userPermissions, onLogout }: AppLayoutProps) {
   return (
     <SidebarProvider defaultOpen={true}>
       <div className="min-h-screen w-full bg-background">
         <div className="flex h-screen">
-          <AppSidebar userRole={userRole} userEmail={userEmail} onLogout={onLogout} />
+          <AppSidebar userRole={userRole} userEmail={userEmail} userPermissions={userPermissions} onLogout={onLogout} />
           
           <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
             <TopNav 

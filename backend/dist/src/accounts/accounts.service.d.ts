@@ -11,11 +11,6 @@ export declare class AccountsService {
             lastName: string;
         };
     } & {
-        notes: string | null;
-        doNotCall: boolean;
-        lastContactDate: Date | null;
-        lastPaymentDate: Date | null;
-        nextContactDate: Date | null;
         id: string;
         email: string | null;
         firstName: string;
@@ -34,6 +29,7 @@ export declare class AccountsService {
         currentBalance: number;
         amountPaid: number;
         interestRate: number | null;
+        lastPaymentDate: Date | null;
         lastPaymentAmount: number | null;
         status: string;
         priority: string;
@@ -43,10 +39,14 @@ export declare class AccountsService {
         timezone: string | null;
         language: string | null;
         daysPastDue: number;
+        lastContactDate: Date | null;
+        nextContactDate: Date | null;
         contactAttempts: number;
+        doNotCall: boolean;
         disputeFlag: boolean;
         bankruptcyFlag: boolean;
         deceasedFlag: boolean;
+        notes: string | null;
         source: string | null;
         batchId: string | null;
         assignedAgentId: string | null;
@@ -60,11 +60,6 @@ export declare class AccountsService {
                 lastName: string;
             };
         } & {
-            notes: string | null;
-            doNotCall: boolean;
-            lastContactDate: Date | null;
-            lastPaymentDate: Date | null;
-            nextContactDate: Date | null;
             id: string;
             email: string | null;
             firstName: string;
@@ -83,6 +78,7 @@ export declare class AccountsService {
             currentBalance: number;
             amountPaid: number;
             interestRate: number | null;
+            lastPaymentDate: Date | null;
             lastPaymentAmount: number | null;
             status: string;
             priority: string;
@@ -92,10 +88,14 @@ export declare class AccountsService {
             timezone: string | null;
             language: string | null;
             daysPastDue: number;
+            lastContactDate: Date | null;
+            nextContactDate: Date | null;
             contactAttempts: number;
+            doNotCall: boolean;
             disputeFlag: boolean;
             bankruptcyFlag: boolean;
             deceasedFlag: boolean;
+            notes: string | null;
             source: string | null;
             batchId: string | null;
             assignedAgentId: string | null;
@@ -115,11 +115,6 @@ export declare class AccountsService {
             lastName: string;
         };
     } & {
-        notes: string | null;
-        doNotCall: boolean;
-        lastContactDate: Date | null;
-        lastPaymentDate: Date | null;
-        nextContactDate: Date | null;
         id: string;
         email: string | null;
         firstName: string;
@@ -138,6 +133,7 @@ export declare class AccountsService {
         currentBalance: number;
         amountPaid: number;
         interestRate: number | null;
+        lastPaymentDate: Date | null;
         lastPaymentAmount: number | null;
         status: string;
         priority: string;
@@ -147,20 +143,19 @@ export declare class AccountsService {
         timezone: string | null;
         language: string | null;
         daysPastDue: number;
+        lastContactDate: Date | null;
+        nextContactDate: Date | null;
         contactAttempts: number;
+        doNotCall: boolean;
         disputeFlag: boolean;
         bankruptcyFlag: boolean;
         deceasedFlag: boolean;
+        notes: string | null;
         source: string | null;
         batchId: string | null;
         assignedAgentId: string | null;
     }>;
     update(id: string, updateAccountDto: any, userId: string): Promise<{
-        notes: string | null;
-        doNotCall: boolean;
-        lastContactDate: Date | null;
-        lastPaymentDate: Date | null;
-        nextContactDate: Date | null;
         id: string;
         email: string | null;
         firstName: string;
@@ -179,6 +174,7 @@ export declare class AccountsService {
         currentBalance: number;
         amountPaid: number;
         interestRate: number | null;
+        lastPaymentDate: Date | null;
         lastPaymentAmount: number | null;
         status: string;
         priority: string;
@@ -188,10 +184,14 @@ export declare class AccountsService {
         timezone: string | null;
         language: string | null;
         daysPastDue: number;
+        lastContactDate: Date | null;
+        nextContactDate: Date | null;
         contactAttempts: number;
+        doNotCall: boolean;
         disputeFlag: boolean;
         bankruptcyFlag: boolean;
         deceasedFlag: boolean;
+        notes: string | null;
         source: string | null;
         batchId: string | null;
         assignedAgentId: string | null;
@@ -217,11 +217,6 @@ export declare class AccountsService {
             lastName: string;
         };
     } & {
-        notes: string | null;
-        doNotCall: boolean;
-        lastContactDate: Date | null;
-        lastPaymentDate: Date | null;
-        nextContactDate: Date | null;
         id: string;
         email: string | null;
         firstName: string;
@@ -240,6 +235,7 @@ export declare class AccountsService {
         currentBalance: number;
         amountPaid: number;
         interestRate: number | null;
+        lastPaymentDate: Date | null;
         lastPaymentAmount: number | null;
         status: string;
         priority: string;
@@ -249,10 +245,14 @@ export declare class AccountsService {
         timezone: string | null;
         language: string | null;
         daysPastDue: number;
+        lastContactDate: Date | null;
+        nextContactDate: Date | null;
         contactAttempts: number;
+        doNotCall: boolean;
         disputeFlag: boolean;
         bankruptcyFlag: boolean;
         deceasedFlag: boolean;
+        notes: string | null;
         source: string | null;
         batchId: string | null;
         assignedAgentId: string | null;
@@ -273,4 +273,5 @@ export declare class AccountsService {
             failed: number;
         };
     }>;
+    exportToCsv(filterDto: any, userId: string): Promise<string>;
 }

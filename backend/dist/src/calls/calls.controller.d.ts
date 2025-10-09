@@ -35,4 +35,15 @@ export declare class CallsController {
         message: string;
         id: string;
     }>;
+    initiateCall(initiateCallDto: {
+        phoneNumber: string;
+        agentId: string;
+        accountId: string;
+    }): Promise<any>;
+    hangupCall(callId: string): Promise<any>;
+    getCallStatus(callId: string): Promise<any>;
+    getRecording(id: string): Promise<any>;
+    uploadRecording(id: string, recordingData: {
+        recordingUrl: string;
+    }): Promise<any>;
 }

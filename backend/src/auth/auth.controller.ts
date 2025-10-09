@@ -16,11 +16,15 @@ import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { LoginDto, RefreshTokenDto } from './dto/auth.dto';
 import { User } from '@prisma/client';
+import { AuditLoggingService } from '../common/services/audit-logging.service';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private auditService: AuditLoggingService,
+  ) {}
 
   @ApiOperation({ summary: 'User login' })
   @ApiResponse({ status: 200, description: 'Login successful' })
@@ -34,6 +38,21 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.login(req.user);
+
+    // Log successful login
+    await this.auditService.logAuthEvent(
+      'LOGIN_SUCCESS',
+      req.user.id,
+      req.user.email,
+      req.ip,
+      req.get('User-Agent'),
+      {
+        loginMethod: 'standard',
+        userAgent: req.get('User-Agent'),
+        timestamp: new Date().toISOString(),
+      },
+      true
+    );
 
     // Set refresh token as httpOnly cookie
     res.cookie('refreshToken', result.refreshToken, {
@@ -66,6 +85,25 @@ export class AuthController {
 
     const result = await this.authService.refreshToken(refreshToken);
 
+    // Log token refresh (we can extract user info from the token payload)
+    try {
+      // Note: In a real implementation, you might want to decode the JWT to get user info
+      await this.auditService.logAuthEvent(
+        'TOKEN_REFRESH',
+        undefined, // We don't have user ID readily available here
+        undefined,
+        req.ip,
+        req.get('User-Agent'),
+        {
+          timestamp: new Date().toISOString(),
+        },
+        true
+      );
+    } catch (auditError) {
+      // Don't fail the token refresh if audit logging fails
+      console.warn('Failed to log token refresh:', auditError);
+    }
+
     // Set new refresh token as httpOnly cookie
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
@@ -86,13 +124,29 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   async logout(
-    @Req() req: Request,
+    @Req() req: Request & { user?: Omit<User, 'password'> },
     @Res({ passthrough: true }) res: Response,
   ) {
     const refreshToken = req.cookies.refreshToken;
     
     if (refreshToken) {
       await this.authService.logout(refreshToken);
+    }
+
+    // Log logout event
+    if (req.user) {
+      await this.auditService.logAuthEvent(
+        'LOGOUT',
+        req.user.id,
+        req.user.email,
+        req.ip,
+        req.get('User-Agent'),
+        {
+          logoutMethod: 'standard',
+          timestamp: new Date().toISOString(),
+        },
+        true
+      );
     }
 
     // Clear refresh token cookie
@@ -124,6 +178,20 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     await this.authService.logoutAll(req.user.id);
+
+    // Log logout from all devices
+    await this.auditService.logAuthEvent(
+      'LOGOUT',
+      req.user.id,
+      req.user.email,
+      req.ip,
+      req.get('User-Agent'),
+      {
+        logoutMethod: 'all_devices',
+        timestamp: new Date().toISOString(),
+      },
+      true
+    );
 
     // Clear refresh token cookie
     res.clearCookie('refreshToken');

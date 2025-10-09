@@ -15,11 +15,19 @@ const users_module_1 = require("./users/users.module");
 const accounts_module_1 = require("./accounts/accounts.module");
 const calls_module_1 = require("./calls/calls.module");
 const bulk_upload_module_1 = require("./bulk-upload/bulk-upload.module");
+const rbac_module_1 = require("./rbac/rbac.module");
 const prisma_module_1 = require("./prisma/prisma.module");
 const health_module_1 = require("./health/health.module");
+const phase4_security_module_1 = require("./common/phase4-security.module");
 const app_controller_1 = require("./app.controller");
 const root_controller_1 = require("./root.controller");
+const security_headers_middleware_1 = require("./common/middleware/security-headers.middleware");
 let AppModule = class AppModule {
+    configure(consumer) {
+        consumer
+            .apply(security_headers_middleware_1.default)
+            .forRoutes('*');
+    }
 };
 exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
@@ -46,8 +54,11 @@ exports.AppModule = AppModule = __decorate([
             accounts_module_1.AccountsModule,
             calls_module_1.CallsModule,
             bulk_upload_module_1.BulkUploadModule,
+            rbac_module_1.RbacModule,
+            phase4_security_module_1.Phase4SecurityModule,
         ],
         controllers: [app_controller_1.AppController, root_controller_1.RootController],
+        providers: [security_headers_middleware_1.default],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

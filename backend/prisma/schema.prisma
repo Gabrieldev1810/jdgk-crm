@@ -43,6 +43,13 @@ model User {
   
   // Audit Log Relationships
   auditLogs           AuditLog[]         @relation("AuditLogActor")
+  
+  // Phase 4 Security Relationships
+  mfaConfig           UserMFA?           @relation("UserMFA")
+  sessions            UserSession[]      @relation("UserSessions")
+  securityEvents      SecurityEvent[]    @relation("UserSecurityEvents")
+  resolvedSecurityEvents SecurityEvent[] @relation("SecurityEventResolver")
+  permissionContexts  PermissionContext[] @relation("UserPermissionContexts")
 
   @@map("users")
 }
@@ -245,6 +252,7 @@ model Permission {
 
   // Relationships
   rolePermissions RolePermission[]
+  contexts        PermissionContext[] @relation("PermissionContexts")
 
   @@index([code])
   @@index([category])
@@ -368,4 +376,136 @@ model Disposition {
   @@index([isActive])
   @@index([sortOrder])
   @@map("dispositions")
+}
+
+// ================================
+// PHASE 4: ADVANCED SECURITY FEATURES
+// ================================
+
+// Multi-Factor Authentication
+model UserMFA {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  secret        String   // Encrypted TOTP secret
+  backupCodes   String?  // JSON array of encrypted backup codes
+  isEnabled     Boolean  @default(false)
+  lastUsedAt    DateTime?
+  setupAt       DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relationships
+  user User @relation("UserMFA", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_mfa")
+}
+
+// Enhanced Session Security
+model UserSession {
+  id                String   @id @default(uuid())
+  userId            String
+  sessionToken      String   @unique
+  deviceFingerprint String
+  ipAddress         String
+  userAgent         String
+  location          String?  // Geo location
+  riskScore         Float    @default(0.0)
+  isActive          Boolean  @default(true)
+  lastActivityAt    DateTime @default(now())
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+  
+  // Security metadata
+  loginMethod       String?  // password, mfa, sso
+  deviceType        String?  // desktop, mobile, tablet
+  browserInfo       String?  // JSON with browser details
+  
+  // Relationships
+  user User @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionToken])
+  @@index([deviceFingerprint])
+  @@index([isActive])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
+// Data Encryption Keys Management
+model EncryptionKey {
+  id          String   @id @default(uuid())
+  keyId       String   @unique
+  algorithm   String   @default("AES-256-CBC")
+  purpose     String   // field_encryption, file_encryption, etc.
+  isActive    Boolean  @default(true)
+  rotatedAt   DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  
+  // Key metadata (actual keys stored in environment/secrets)
+  version     Int      @default(1)
+  
+  @@index([keyId])
+  @@index([purpose])
+  @@index([isActive])
+  @@map("encryption_keys")
+}
+
+// Risk Assessment and Anomaly Detection
+model SecurityEvent {
+  id            String   @id @default(uuid())
+  userId        String?
+  sessionId     String?
+  eventType     String   // LOGIN_ATTEMPT, PERMISSION_DENIED, SUSPICIOUS_ACTIVITY, etc.
+  severity      String   // LOW, MEDIUM, HIGH, CRITICAL
+  description   String
+  details       String?  // JSON with event details
+  ipAddress     String?
+  userAgent     String?
+  location      String?
+  riskScore     Float    @default(0.0)
+  isBlocked     Boolean  @default(false)
+  resolvedAt    DateTime?
+  resolvedById  String?
+  createdAt     DateTime @default(now())
+  
+  // Relationships
+  user      User? @relation("UserSecurityEvents", fields: [userId], references: [id])
+  resolvedBy User? @relation("SecurityEventResolver", fields: [resolvedById], references: [id])
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([severity])
+  @@index([createdAt])
+  @@index([isBlocked])
+  @@map("security_events")
+}
+
+// Dynamic Permission Context
+model PermissionContext {
+  id            String   @id @default(uuid())
+  userId        String
+  permissionId  String
+  context       String   // JSON with contextual data
+  grantedAt     DateTime @default(now())
+  expiresAt     DateTime?
+  isActive      Boolean  @default(true)
+  
+  // Context metadata
+  ipRange       String?  // Allowed IP ranges
+  timeRestriction String? // JSON with time-based restrictions
+  locationRestriction String? // JSON with geo restrictions
+  deviceRestriction String?   // JSON with device restrictions
+  
+  // Relationships
+  user       User       @relation("UserPermissionContexts", fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation("PermissionContexts", fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId])
+  @@index([userId])
+  @@index([permissionId])
+  @@index([isActive])
+  @@index([expiresAt])
+  @@map("permission_contexts")
 }

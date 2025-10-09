@@ -35,4 +35,9 @@ export declare class CallsService {
         successRate: number;
         dispositionBreakdown: Record<string, number>;
     }>;
+    initiateVicidialCall(phoneNumber: string, agentId: string, accountId: string): Promise<any>;
+    hangupVicidialCall(callId: string): Promise<any>;
+    getVicidialCallStatus(callId: string): Promise<any>;
+    getCallRecording(callId: string): Promise<any>;
+    updateCallRecording(callId: string, recordingUrl: string): Promise<any>;
 }

@@ -3,7 +3,7 @@ export const config = {
   // API Configuration
   api: {
     // Use proxy during development, direct URL in production
-    baseUrl: import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '' : 'http://localhost:3000'),
+    baseUrl: import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '' : 'http://localhost:3001'),
     prefix: '/api',
     timeout: 30000, // 30 seconds
   },

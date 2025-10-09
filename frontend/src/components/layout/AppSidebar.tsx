@@ -45,34 +45,35 @@ interface MenuItem {
   title: string
   url: string
   icon: typeof Home
-  roles: string[]
+  permissions: string[]  // Changed from roles to permissions
 }
 
 const menuItems: MenuItem[] = [
-  { title: "Dashboard", url: "/dashboard", icon: Home, roles: ["super_admin", "admin", "manager", "agent"] },
-  { title: "Accounts", url: "/accounts", icon: Users, roles: ["super_admin", "admin", "manager", "agent"] },
-  { title: "Call Center", url: "/calls", icon: Phone, roles: ["super_admin", "admin", "manager", "agent"] },
-  { title: "Dispositions", url: "/dispositions", icon: FileText, roles: ["super_admin", "admin", "manager"] },
-  { title: "Upload Data", url: "/upload", icon: Upload, roles: ["super_admin", "admin", "manager"] },
-  { title: "Reports", url: "/reports", icon: BarChart3, roles: ["super_admin", "admin", "manager"] },
-  { title: "User Management", url: "/users", icon: Shield, roles: ["super_admin", "admin"] },
-  { title: "Role Management", url: "/role-management", icon: Shield, roles: ["super_admin", "admin"] },
-  { title: "Audit Logs", url: "/audit-logs", icon: FileText, roles: ["super_admin", "admin"] },
-  { title: "System Settings", url: "/settings", icon: Settings, roles: ["super_admin", "admin"] },
+  { title: "Dashboard", url: "/dashboard", icon: Home, permissions: [] }, // Dashboard is always visible
+  { title: "Accounts", url: "/accounts", icon: Users, permissions: ["accounts.view"] },
+  { title: "Call Center", url: "/calls", icon: Phone, permissions: ["calls.view"] },
+  { title: "Dispositions", url: "/dispositions", icon: FileText, permissions: ["dispositions.view"] },
+  { title: "Upload Data", url: "/upload", icon: Upload, permissions: ["uploads.view", "uploads.create"] },
+  { title: "Reports", url: "/reports", icon: BarChart3, permissions: ["reports.view"] },
+  { title: "User Management", url: "/users", icon: Shield, permissions: ["users.view", "users.manage"] },
+  { title: "Role Management", url: "/role-management", icon: Shield, permissions: ["roles.view", "roles.manage"] },
+  { title: "Audit Logs", url: "/audit-logs", icon: FileText, permissions: ["audit.view"] },
+  { title: "System Settings", url: "/settings", icon: Settings, permissions: ["system.settings"] },
 ]
 
 const integrationItems: MenuItem[] = [
-  { title: "3CX Status", url: "/integrations/3cx", icon: Headphones, roles: ["super_admin", "admin", "manager"] },
-  { title: "Database", url: "/integrations/database", icon: Database, roles: ["super_admin", "admin"] },
+  { title: "3CX Status", url: "/integrations/3cx", icon: Headphones, permissions: ["integrations.view"] },
+  { title: "Database", url: "/integrations/database", icon: Database, permissions: ["integrations.manage"] },
 ]
 
 interface AppSidebarProps {
   userRole?: string
   userEmail?: string
+  userPermissions?: string[]
   onLogout?: () => void
 }
 
-export function AppSidebar({ userRole = "agent", userEmail = "agent@bank.com", onLogout }: AppSidebarProps) {
+export function AppSidebar({ userRole = "agent", userEmail = "", userPermissions = [], onLogout }: AppSidebarProps) {
   const { state } = useSidebar()
   const location = useLocation()
   const currentPath = location.pathname
@@ -84,10 +85,23 @@ export function AppSidebar({ userRole = "agent", userEmail = "agent@bank.com", o
       ? "bg-sidebar-accent/50 text-sidebar-foreground font-medium border-l-2 border-sidebar-primary" 
       : "text-sidebar-foreground/80 hover:bg-sidebar-accent/30 hover:text-sidebar-foreground transition-colors duration-150"
 
-  // Convert role to lowercase and handle role matching
-  const normalizedRole = userRole.toLowerCase()
-  const filteredMenuItems = menuItems.filter(item => item.roles.includes(normalizedRole))
-  const filteredIntegrationItems = integrationItems.filter(item => item.roles.includes(normalizedRole))
+  // Filter menu items based on user permissions
+  const normalizedRole = userRole.toLowerCase() // Keep for profile display
+  const hasAnyPermission = (requiredPermissions: string[]) => {
+    // If no permissions required, item is always visible
+    if (requiredPermissions.length === 0) return true;
+    // If no user permissions available (loading/error), fallback to role-based for basic access
+    if (!userPermissions || userPermissions.length === 0) {
+      console.warn('No user permissions available, using role-based fallback');
+      // Basic fallback: show dashboard and accounts to all users
+      return requiredPermissions.includes("accounts.view") || requiredPermissions.includes("calls.view");
+    }
+    // Check if user has at least one of the required permissions
+    return requiredPermissions.some(permission => userPermissions.includes(permission));
+  };
+  
+  const filteredMenuItems = menuItems.filter(item => hasAnyPermission(item.permissions))
+  const filteredIntegrationItems = integrationItems.filter(item => hasAnyPermission(item.permissions))
   const collapsed = state === "collapsed"
 
   const userInitials = userEmail.split('@')[0].slice(0, 2).toUpperCase()
@@ -103,23 +117,23 @@ export function AppSidebar({ userRole = "agent", userEmail = "agent@bank.com", o
     }
   }
 
-  // Mock user profile data
+  // Dynamic user profile data - should be passed as props or fetched from API
   const userProfile = {
-    name: "John Anderson",
+    name: userEmail ? userEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : "User",
     email: userEmail,
     role: userRole,
-    department: "Collections Department",
+    department: "Collections Department", // TODO: Get from user data
     position: normalizedRole === "super_admin" ? "Super Administrator" :
               normalizedRole === "admin" ? "System Administrator" : 
               normalizedRole === "manager" ? "Collections Manager" : "Collections Agent",
-    employeeId: "EMP-2024-001",
-    hireDate: "January 15, 2023",
-    location: "New York Office",
-    phone: "+1 (555) 123-4567",
-    manager: normalizedRole !== "super_admin" && normalizedRole !== "admin" ? "Sarah Johnson" : null,
-    team: normalizedRole === "manager" ? "Team Alpha" : normalizedRole === "agent" ? "Team Alpha" : null,
-    lastLogin: "Today at 9:30 AM",
-    status: "Active"
+    status: "Active", // TODO: Get from user data
+    lastLogin: "Recently", // TODO: Get from user data
+    phone: null, // TODO: Get from user data
+    location: null, // TODO: Get from user data
+    hireDate: null, // TODO: Get from user data
+    employeeId: null, // TODO: Get from user data
+    manager: normalizedRole !== "super_admin" && normalizedRole !== "admin" ? null : null, // TODO: Get from user data
+    team: null // TODO: Get from user data
   }
 
   return (
@@ -305,21 +319,27 @@ export function AppSidebar({ userRole = "agent", userEmail = "agent@bank.com", o
                     <span className="text-sm font-medium text-foreground">Email:</span>
                     <span className="text-sm text-muted-foreground">{userProfile.email}</span>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Phone className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium text-foreground">Phone:</span>
-                    <span className="text-sm text-muted-foreground">{userProfile.phone}</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <MapPin className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium text-foreground">Location:</span>
-                    <span className="text-sm text-muted-foreground">{userProfile.location}</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Calendar className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium text-foreground">Hire Date:</span>
-                    <span className="text-sm text-muted-foreground">{userProfile.hireDate}</span>
-                  </div>
+                  {userProfile.phone && (
+                    <div className="flex items-center space-x-2">
+                      <Phone className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-medium text-foreground">Phone:</span>
+                      <span className="text-sm text-muted-foreground">{userProfile.phone}</span>
+                    </div>
+                  )}
+                  {userProfile.location && (
+                    <div className="flex items-center space-x-2">
+                      <MapPin className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-medium text-foreground">Location:</span>
+                      <span className="text-sm text-muted-foreground">{userProfile.location}</span>
+                    </div>
+                  )}
+                  {userProfile.hireDate && (
+                    <div className="flex items-center space-x-2">
+                      <Calendar className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-medium text-foreground">Hire Date:</span>
+                      <span className="text-sm text-muted-foreground">{userProfile.hireDate}</span>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
@@ -332,11 +352,13 @@ export function AppSidebar({ userRole = "agent", userEmail = "agent@bank.com", o
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="flex items-center space-x-2">
-                    <Shield className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium text-foreground">Employee ID:</span>
-                    <span className="text-sm text-muted-foreground font-mono">{userProfile.employeeId}</span>
-                  </div>
+                  {userProfile.employeeId && (
+                    <div className="flex items-center space-x-2">
+                      <Shield className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-medium text-foreground">Employee ID:</span>
+                      <span className="text-sm text-muted-foreground font-mono">{userProfile.employeeId}</span>
+                    </div>
+                  )}
                   <div className="flex items-center space-x-2">
                     <Building className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm font-medium text-foreground">Department:</span>

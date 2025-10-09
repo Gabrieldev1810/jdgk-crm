@@ -64,11 +64,9 @@ class AccountService {
     return response;
   }
 
-  async exportAccounts(params?: AccountSearchParams): Promise<Blob> {
-    const response = await api.get<Account[]>(`${this.baseUrl}/export`, params);
-    return new Blob([JSON.stringify(response)], {
-      type: 'application/json'
-    });
+  async exportAccounts(params?: AccountSearchParams): Promise<{data: string; filename: string; contentType: string}> {
+    const response = await api.get<{data: string; filename: string; contentType: string}>(`${this.baseUrl}/export`, params);
+    return response;
   }
 
   // ================================

@@ -1,7 +1,9 @@
 import { AccountsService } from './accounts.service';
+import { AuditLoggingService } from '../common/services/audit-logging.service';
 export declare class AccountsController {
     private readonly accountsService;
-    constructor(accountsService: AccountsService);
+    private readonly auditService;
+    constructor(accountsService: AccountsService, auditService: AuditLoggingService);
     create(createAccountDto: any, req: any): Promise<{
         assignedAgent: {
             id: string;
@@ -10,11 +12,6 @@ export declare class AccountsController {
             lastName: string;
         };
     } & {
-        notes: string | null;
-        doNotCall: boolean;
-        lastContactDate: Date | null;
-        lastPaymentDate: Date | null;
-        nextContactDate: Date | null;
         id: string;
         email: string | null;
         firstName: string;
@@ -33,6 +30,7 @@ export declare class AccountsController {
         currentBalance: number;
         amountPaid: number;
         interestRate: number | null;
+        lastPaymentDate: Date | null;
         lastPaymentAmount: number | null;
         status: string;
         priority: string;
@@ -42,10 +40,14 @@ export declare class AccountsController {
         timezone: string | null;
         language: string | null;
         daysPastDue: number;
+        lastContactDate: Date | null;
+        nextContactDate: Date | null;
         contactAttempts: number;
+        doNotCall: boolean;
         disputeFlag: boolean;
         bankruptcyFlag: boolean;
         deceasedFlag: boolean;
+        notes: string | null;
         source: string | null;
         batchId: string | null;
         assignedAgentId: string | null;
@@ -59,11 +61,6 @@ export declare class AccountsController {
                 lastName: string;
             };
         } & {
-            notes: string | null;
-            doNotCall: boolean;
-            lastContactDate: Date | null;
-            lastPaymentDate: Date | null;
-            nextContactDate: Date | null;
             id: string;
             email: string | null;
             firstName: string;
@@ -82,6 +79,7 @@ export declare class AccountsController {
             currentBalance: number;
             amountPaid: number;
             interestRate: number | null;
+            lastPaymentDate: Date | null;
             lastPaymentAmount: number | null;
             status: string;
             priority: string;
@@ -91,10 +89,14 @@ export declare class AccountsController {
             timezone: string | null;
             language: string | null;
             daysPastDue: number;
+            lastContactDate: Date | null;
+            nextContactDate: Date | null;
             contactAttempts: number;
+            doNotCall: boolean;
             disputeFlag: boolean;
             bankruptcyFlag: boolean;
             deceasedFlag: boolean;
+            notes: string | null;
             source: string | null;
             batchId: string | null;
             assignedAgentId: string | null;
@@ -115,6 +117,12 @@ export declare class AccountsController {
             paid: number;
         };
     }>;
+    exportAccounts(queryParams: any, req: any): Promise<{
+        success: boolean;
+        data: string;
+        filename: string;
+        contentType: string;
+    }>;
     findOne(id: string, req: any): Promise<{
         assignedAgent: {
             id: string;
@@ -123,11 +131,6 @@ export declare class AccountsController {
             lastName: string;
         };
     } & {
-        notes: string | null;
-        doNotCall: boolean;
-        lastContactDate: Date | null;
-        lastPaymentDate: Date | null;
-        nextContactDate: Date | null;
         id: string;
         email: string | null;
         firstName: string;
@@ -146,6 +149,7 @@ export declare class AccountsController {
         currentBalance: number;
         amountPaid: number;
         interestRate: number | null;
+        lastPaymentDate: Date | null;
         lastPaymentAmount: number | null;
         status: string;
         priority: string;
@@ -155,20 +159,19 @@ export declare class AccountsController {
         timezone: string | null;
         language: string | null;
         daysPastDue: number;
+        lastContactDate: Date | null;
+        nextContactDate: Date | null;
         contactAttempts: number;
+        doNotCall: boolean;
         disputeFlag: boolean;
         bankruptcyFlag: boolean;
         deceasedFlag: boolean;
+        notes: string | null;
         source: string | null;
         batchId: string | null;
         assignedAgentId: string | null;
     }>;
     update(id: string, updateAccountDto: any, req: any): Promise<{
-        notes: string | null;
-        doNotCall: boolean;
-        lastContactDate: Date | null;
-        lastPaymentDate: Date | null;
-        nextContactDate: Date | null;
         id: string;
         email: string | null;
         firstName: string;
@@ -187,6 +190,7 @@ export declare class AccountsController {
         currentBalance: number;
         amountPaid: number;
         interestRate: number | null;
+        lastPaymentDate: Date | null;
         lastPaymentAmount: number | null;
         status: string;
         priority: string;
@@ -196,10 +200,14 @@ export declare class AccountsController {
         timezone: string | null;
         language: string | null;
         daysPastDue: number;
+        lastContactDate: Date | null;
+        nextContactDate: Date | null;
         contactAttempts: number;
+        doNotCall: boolean;
         disputeFlag: boolean;
         bankruptcyFlag: boolean;
         deceasedFlag: boolean;
+        notes: string | null;
         source: string | null;
         batchId: string | null;
         assignedAgentId: string | null;
@@ -224,11 +232,6 @@ export declare class AccountsController {
             lastName: string;
         };
     } & {
-        notes: string | null;
-        doNotCall: boolean;
-        lastContactDate: Date | null;
-        lastPaymentDate: Date | null;
-        nextContactDate: Date | null;
         id: string;
         email: string | null;
         firstName: string;
@@ -247,6 +250,7 @@ export declare class AccountsController {
         currentBalance: number;
         amountPaid: number;
         interestRate: number | null;
+        lastPaymentDate: Date | null;
         lastPaymentAmount: number | null;
         status: string;
         priority: string;
@@ -256,10 +260,14 @@ export declare class AccountsController {
         timezone: string | null;
         language: string | null;
         daysPastDue: number;
+        lastContactDate: Date | null;
+        nextContactDate: Date | null;
         contactAttempts: number;
+        doNotCall: boolean;
         disputeFlag: boolean;
         bankruptcyFlag: boolean;
         deceasedFlag: boolean;
+        notes: string | null;
         source: string | null;
         batchId: string | null;
         assignedAgentId: string | null;

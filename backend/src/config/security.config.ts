@@ -114,6 +114,8 @@ export const getSecurityConfig = (configService: ConfigService): SecurityConfig 
           'http://localhost:5173', // Vite
           'http://localhost:3000', // React
           'http://localhost:3001',
+          'http://localhost:3002', // Test server
+          'http://localhost:3003', // Additional test server
           'http://localhost:8080',
           'http://localhost:8081',
           'http://localhost:8082',
@@ -130,6 +132,7 @@ export const getSecurityConfig = (configService: ConfigService): SecurityConfig 
         'Origin',
         'Cache-Control',
         'X-File-Name',
+        'X-Request-ID',
       ],
       exposedHeaders: [
         'X-Total-Count',

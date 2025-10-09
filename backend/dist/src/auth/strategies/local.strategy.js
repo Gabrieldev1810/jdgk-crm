@@ -14,34 +14,47 @@ const common_1 = require("@nestjs/common");
 const passport_1 = require("@nestjs/passport");
 const passport_local_1 = require("passport-local");
 const auth_service_1 = require("../auth.service");
+const audit_logging_service_1 = require("../../common/services/audit-logging.service");
 let LocalStrategy = class LocalStrategy extends (0, passport_1.PassportStrategy)(passport_local_1.Strategy) {
-    constructor(authService) {
+    constructor(authService, auditService) {
         super({
             usernameField: 'email',
             passwordField: 'password',
+            passReqToCallback: true,
         });
         this.authService = authService;
+        this.auditService = auditService;
     }
-    async validate(email, password) {
+    async validate(req, email, password) {
         try {
             const user = await this.authService.validateUser(email, password);
             if (!user) {
+                await this.auditService.logAuthEvent('LOGIN_FAILED', undefined, email, req.ip, req.get('User-Agent'), {
+                    reason: 'Invalid credentials',
+                    timestamp: new Date().toISOString(),
+                }, false, 'Invalid email or password');
                 throw new common_1.UnauthorizedException('Invalid credentials');
             }
             return user;
         }
         catch (error) {
             console.error('LocalStrategy validation error:', error);
-            if (error instanceof common_1.UnauthorizedException) {
-                throw error;
+            if (!(error instanceof common_1.UnauthorizedException)) {
+                await this.auditService.logAuthEvent('LOGIN_FAILED', undefined, email, req.ip, req.get('User-Agent'), {
+                    reason: 'Authentication error',
+                    error: error.message,
+                    timestamp: new Date().toISOString(),
+                }, false, error.message);
+                throw new common_1.UnauthorizedException('Authentication failed');
             }
-            throw new common_1.UnauthorizedException('Authentication failed');
+            throw error;
         }
     }
 };
 exports.LocalStrategy = LocalStrategy;
 exports.LocalStrategy = LocalStrategy = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [auth_service_1.AuthService])
+    __metadata("design:paramtypes", [auth_service_1.AuthService,
+        audit_logging_service_1.AuditLoggingService])
 ], LocalStrategy);
 //# sourceMappingURL=local.strategy.js.map

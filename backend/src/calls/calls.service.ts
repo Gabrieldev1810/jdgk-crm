@@ -338,4 +338,189 @@ export class CallsService {
       dispositionBreakdown,
     };
   }
+
+  // VICIdial Integration Methods
+  async initiateVicidialCall(phoneNumber: string, agentId: string, accountId: string): Promise<any> {
+    try {
+      // Create initial call record
+      const call = await this.prisma.call.create({
+        data: {
+          accountId,
+          agentId,
+          direction: 'OUTBOUND',
+          status: 'IN_PROGRESS',
+          disposition: 'PENDING',
+          startTime: new Date(),
+        },
+        include: {
+          agent: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          account: {
+            select: {
+              id: true,
+              accountNumber: true,
+              fullName: true,
+            },
+          },
+        },
+      });
+
+      // Here you would integrate with actual VICIdial API
+      // For now, we'll simulate the response
+      return {
+        success: true,
+        message: 'Call initiated successfully',
+        callId: call.id,
+        vicidialCallId: `VICI_${Date.now()}`,
+        data: call,
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to initiate call: ${error.message}`);
+    }
+  }
+
+  async hangupVicidialCall(callId: string): Promise<any> {
+    try {
+      const call = await this.prisma.call.findUnique({
+        where: { id: callId },
+      });
+
+      if (!call) {
+        throw new NotFoundException('Call not found');
+      }
+
+      // Update call status
+      const updatedCall = await this.prisma.call.update({
+        where: { id: callId },
+        data: {
+          status: 'COMPLETED',
+          endTime: new Date(),
+          duration: call.startTime ? Math.floor((new Date().getTime() - call.startTime.getTime()) / 1000) : 0,
+        },
+      });
+
+      // Here you would call VICIdial API to hangup
+      return {
+        success: true,
+        message: 'Call ended successfully',
+        data: updatedCall,
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to hangup call: ${error.message}`);
+    }
+  }
+
+  async getVicidialCallStatus(callId: string): Promise<any> {
+    try {
+      const call = await this.prisma.call.findUnique({
+        where: { id: callId },
+        include: {
+          agent: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          account: {
+            select: {
+              id: true,
+              accountNumber: true,
+              fullName: true,
+            },
+          },
+        },
+      });
+
+      if (!call) {
+        throw new NotFoundException('Call not found');
+      }
+
+      // Here you would check with VICIdial API for real-time status
+      return {
+        success: true,
+        message: 'Call status retrieved',
+        data: {
+          ...call,
+          vicidialStatus: 'ACTIVE', // This would come from VICIdial API
+          estimatedDuration: call.startTime ? Math.floor((new Date().getTime() - call.startTime.getTime()) / 1000) : 0,
+        },
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to get call status: ${error.message}`);
+    }
+  }
+
+  async getCallRecording(callId: string): Promise<any> {
+    try {
+      const call = await this.prisma.call.findUnique({
+        where: { id: callId },
+        select: { recordingPath: true, id: true },
+      });
+
+      if (!call) {
+        throw new NotFoundException('Call not found');
+      }
+
+      if (!call.recordingPath) {
+        throw new NotFoundException('Recording not found for this call');
+      }
+
+      return {
+        success: true,
+        message: 'Recording retrieved',
+        recordingPath: call.recordingPath,
+        callId: call.id,
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to get recording: ${error.message}`);
+    }
+  }
+
+  async updateCallRecording(callId: string, recordingUrl: string): Promise<any> {
+    try {
+      const call = await this.prisma.call.findUnique({
+        where: { id: callId },
+      });
+
+      if (!call) {
+        throw new NotFoundException('Call not found');
+      }
+
+      const updatedCall = await this.prisma.call.update({
+        where: { id: callId },
+        data: { recordingPath: recordingUrl },
+        include: {
+          agent: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          account: {
+            select: {
+              id: true,
+              accountNumber: true,
+              fullName: true,
+            },
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Recording updated successfully',
+        data: updatedCall,
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to update recording: ${error.message}`);
+    }
+  }
 }

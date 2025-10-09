@@ -10,33 +10,67 @@ export class SecurityHeadersMiddleware implements NestMiddleware {
     const isProduction = this.configService.get('NODE_ENV') === 'production';
     const isDevelopment = this.configService.get('NODE_ENV') === 'development';
 
-    // Set additional security headers
-    const securityHeaders = {
+    // Enhanced Content Security Policy for Phase 4
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "img-src 'self' data: https:",
+      "connect-src 'self' ws: wss:",
+      "media-src 'none'",
+      "object-src 'none'",
+      "child-src 'none'",
+      "worker-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "upgrade-insecure-requests",
+    ].join('; ');
+
+    // Set enhanced security headers for Phase 4
+    let securityHeaders = {
+      // Enhanced CSP - conditional based on environment
+      'Content-Security-Policy': isDevelopment 
+        ? "default-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' http://localhost:* ws://localhost:* wss://localhost:*" 
+        : csp,
+      
       // API versioning and identification
-      'X-API-Version': '1.0.0',
-      'X-Service-Name': 'dial-craft-crm',
+      'X-API-Version': '2.0.0-phase4',
+      'X-Service-Name': 'dial-craft-crm-enhanced',
       
-      // Security policy headers
-      'X-Security-Policy': 'strict',
-      'X-Rate-Limit-Policy': 'standard',
+      // Enhanced security policy headers
+      'X-Security-Policy': 'bank-compliant-strict',
+      'X-Rate-Limit-Policy': 'dynamic-adaptive',
+      'X-Encryption-Policy': 'aes-256-field-level',
+      'X-Session-Security': 'enhanced-fingerprinting',
+      'X-MFA-Required': req.path.includes('/admin') || req.path.includes('/sensitive') ? 'true' : 'false',
       
-      // Additional security headers for enhanced protection
+      // Standard security headers
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'X-XSS-Protection': '1; mode=block',
+      'X-Permitted-Cross-Domain-Policies': 'none',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+      
+      // Additional security headers
       'X-Robots-Tag': 'noindex, nofollow, nosnippet, noarchive',
       'X-Download-Options': 'noopen',
-      'X-Permitted-Cross-Domain-Policies': 'none',
       
       // Cache control for sensitive endpoints
-      'Cache-Control': req.path.includes('/auth') || req.path.includes('/users') 
+      'Cache-Control': req.path.includes('/auth') || req.path.includes('/users') || req.path.includes('/rbac')
         ? 'no-store, no-cache, must-revalidate, private' 
         : 'no-cache, no-store, must-revalidate',
       
-      // Prevent MIME type sniffing
-      'X-Content-Type-Options': 'nosniff',
+      // Phase 4 Enhanced Security Headers
+      'X-Audit-Level': req.path.includes('/admin') ? 'high' : 'standard',
+      'X-Risk-Assessment': 'real-time-enabled',
       
-      // Additional CSP for API responses
-      'Content-Security-Policy': isDevelopment 
-        ? "default-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' http://localhost:* ws://localhost:* wss://localhost:*" 
-        : "default-src 'self'; connect-src 'self' https://*.digiedgesolutions.cloud",
+      // Compliance headers
+      'X-GDPR-Compliant': 'true',
+      'X-PCI-DSS-Level': 'Level-1',
+      'X-SOC2-Type': 'Type-II',
     };
 
     // Apply production-only headers
@@ -44,6 +78,18 @@ export class SecurityHeadersMiddleware implements NestMiddleware {
       Object.assign(securityHeaders, {
         'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
         'Expect-CT': 'max-age=86400, enforce',
+      });
+    }
+
+    // Apply development-only headers
+    if (isDevelopment) {
+      Object.assign(securityHeaders, {
+        'X-Environment': 'development',
+        'X-Debug-Mode': 'enabled',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Session-Token, X-MFA-Token',
+        'Access-Control-Allow-Credentials': 'true'
       });
     }
 

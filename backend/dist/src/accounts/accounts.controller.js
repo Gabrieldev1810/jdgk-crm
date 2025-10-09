@@ -19,13 +19,31 @@ const accounts_service_1 = require("./accounts.service");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
+const audit_logging_service_1 = require("../common/services/audit-logging.service");
 let AccountsController = class AccountsController {
-    constructor(accountsService) {
+    constructor(accountsService, auditService) {
         this.accountsService = accountsService;
+        this.auditService = auditService;
     }
     async create(createAccountDto, req) {
         try {
-            return await this.accountsService.create(createAccountDto, req.user.id);
+            const newAccount = await this.accountsService.create(createAccountDto, req.user.id);
+            await this.auditService.logAuditEvent({
+                userId: req.user.id,
+                userEmail: req.user.email,
+                action: 'CREATE',
+                resource: 'ACCOUNTS',
+                resourceId: newAccount.id,
+                details: {
+                    accountNumber: newAccount.accountNumber,
+                    fullName: newAccount.fullName,
+                    email: newAccount.email,
+                },
+                ipAddress: req.ip,
+                userAgent: req.get('User-Agent'),
+                success: true,
+            });
+            return newAccount;
         }
         catch (error) {
             throw new common_1.HttpException(error.message || 'Failed to create account', common_1.HttpStatus.BAD_REQUEST);
@@ -47,6 +65,31 @@ let AccountsController = class AccountsController {
             throw new common_1.HttpException(error.message || 'Failed to fetch statistics', common_1.HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+    async exportAccounts(queryParams, req) {
+        try {
+            const csvData = await this.accountsService.exportToCsv(queryParams, req.user.id);
+            await this.auditService.logAuditEvent({
+                userId: req.user.id,
+                userEmail: req.user.email,
+                action: 'EXPORT',
+                resource: 'ACCOUNTS',
+                success: true,
+                details: {
+                    format: 'CSV',
+                    filters: queryParams,
+                },
+            });
+            return {
+                success: true,
+                data: csvData,
+                filename: `accounts_export_${new Date().toISOString().split('T')[0]}.csv`,
+                contentType: 'text/csv',
+            };
+        }
+        catch (error) {
+            throw new common_1.HttpException(error.message || 'Failed to export accounts', common_1.HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
     async findOne(id, req) {
         try {
             return await this.accountsService.findOne(id, req.user);
@@ -57,7 +100,22 @@ let AccountsController = class AccountsController {
     }
     async update(id, updateAccountDto, req) {
         try {
-            return await this.accountsService.update(id, updateAccountDto, req.user.id);
+            const updatedAccount = await this.accountsService.update(id, updateAccountDto, req.user.id);
+            await this.auditService.logAuditEvent({
+                userId: req.user.id,
+                userEmail: req.user.email,
+                action: 'UPDATE',
+                resource: 'ACCOUNTS',
+                resourceId: id,
+                details: {
+                    updatedFields: Object.keys(updateAccountDto),
+                    changes: updateAccountDto,
+                },
+                ipAddress: req.ip,
+                userAgent: req.get('User-Agent'),
+                success: true,
+            });
+            return updatedAccount;
         }
         catch (error) {
             throw new common_1.HttpException(error.message || 'Failed to update account', common_1.HttpStatus.BAD_REQUEST);
@@ -65,7 +123,26 @@ let AccountsController = class AccountsController {
     }
     async remove(id, req) {
         try {
-            return await this.accountsService.remove(id, req.user.id);
+            const accountToDelete = await this.accountsService.findOne(id, req.user);
+            const result = await this.accountsService.remove(id, req.user.id);
+            await this.auditService.logAuditEvent({
+                userId: req.user.id,
+                userEmail: req.user.email,
+                action: 'DELETE',
+                resource: 'ACCOUNTS',
+                resourceId: id,
+                details: {
+                    deletedAccount: {
+                        accountNumber: accountToDelete.accountNumber,
+                        fullName: accountToDelete.fullName,
+                        email: accountToDelete.email,
+                    },
+                },
+                ipAddress: req.ip,
+                userAgent: req.get('User-Agent'),
+                success: true,
+            });
+            return result;
         }
         catch (error) {
             throw new common_1.HttpException(error.message || 'Failed to delete account', common_1.HttpStatus.BAD_REQUEST);
@@ -76,9 +153,43 @@ let AccountsController = class AccountsController {
             throw new common_1.HttpException('No file uploaded', common_1.HttpStatus.BAD_REQUEST);
         }
         try {
-            return await this.accountsService.bulkUpload(file, req.user.id);
+            const result = await this.accountsService.bulkUpload(file, req.user.id);
+            await this.auditService.logAuditEvent({
+                userId: req.user.id,
+                userEmail: req.user.email,
+                action: 'BULK_UPLOAD',
+                resource: 'ACCOUNTS',
+                details: {
+                    fileName: file.originalname,
+                    fileSize: file.size,
+                    mimeType: file.mimetype,
+                    recordsTotal: result.summary?.total || 0,
+                    recordsProcessed: result.summary?.processed || 0,
+                    recordsFailed: result.summary?.failed || 0,
+                },
+                ipAddress: req.ip,
+                userAgent: req.get('User-Agent'),
+                success: true,
+            });
+            return result;
         }
         catch (error) {
+            await this.auditService.logAuditEvent({
+                userId: req.user.id,
+                userEmail: req.user.email,
+                action: 'BULK_UPLOAD_FAILED',
+                resource: 'ACCOUNTS',
+                details: {
+                    fileName: file.originalname,
+                    fileSize: file.size,
+                    mimeType: file.mimetype,
+                    errorMessage: error.message,
+                },
+                ipAddress: req.ip,
+                userAgent: req.get('User-Agent'),
+                success: false,
+                errorMessage: error.message,
+            });
             throw new common_1.HttpException(error.message || 'Failed to process bulk upload', common_1.HttpStatus.BAD_REQUEST);
         }
     }
@@ -134,6 +245,15 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AccountsController.prototype, "getStatistics", null);
+__decorate([
+    (0, common_1.Get)('export'),
+    (0, roles_decorator_1.Roles)('SUPER_ADMIN', 'ADMIN', 'MANAGER'),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], AccountsController.prototype, "exportAccounts", null);
 __decorate([
     (0, common_1.Get)(':id'),
     (0, roles_decorator_1.Roles)('SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT'),
@@ -204,6 +324,7 @@ __decorate([
 exports.AccountsController = AccountsController = __decorate([
     (0, common_1.Controller)('accounts'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
-    __metadata("design:paramtypes", [accounts_service_1.AccountsService])
+    __metadata("design:paramtypes", [accounts_service_1.AccountsService,
+        audit_logging_service_1.AuditLoggingService])
 ], AccountsController);
 //# sourceMappingURL=accounts.controller.js.map

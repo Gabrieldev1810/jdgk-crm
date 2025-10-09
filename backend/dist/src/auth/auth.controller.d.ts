@@ -2,9 +2,11 @@ import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/auth.dto';
 import { User } from '@prisma/client';
+import { AuditLoggingService } from '../common/services/audit-logging.service';
 export declare class AuthController {
     private authService;
-    constructor(authService: AuthService);
+    private auditService;
+    constructor(authService: AuthService, auditService: AuditLoggingService);
     login(loginDto: LoginDto, req: Request & {
         user: Omit<User, 'password'>;
     }, res: Response): Promise<{
@@ -35,7 +37,9 @@ export declare class AuthController {
     refresh(req: Request, res: Response): Promise<{
         accessToken: string;
     }>;
-    logout(req: Request, res: Response): Promise<{
+    logout(req: Request & {
+        user?: Omit<User, 'password'>;
+    }, res: Response): Promise<{
         message: string;
     }>;
     getProfile(req: Request & {

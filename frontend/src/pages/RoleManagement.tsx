@@ -33,10 +33,14 @@ export default function RoleManagement() {
   const loadData = async () => {
     setIsLoading(true)
     try {
+      console.log('📊 Loading roles and permissions...');
       const [rolesData, permissionsData] = await Promise.all([
         rbacService.getRoles(),
         rbacService.getPermissions()
       ])
+      console.log('📊 Loaded roles:', rolesData.length, 'permissions:', permissionsData.length);
+      console.log('📊 Updated roles data:', rolesData.map(r => ({ name: r.name, permissions: r.permissions?.length || 0 })));
+      
       setRoles(rolesData)
       setPermissions(permissionsData)
     } catch (error) {
@@ -67,8 +71,11 @@ export default function RoleManagement() {
         permissions: formData.permissions
       }
 
-      const newRole = await rbacService.createRole(createData)
-      setRoles([...roles, newRole])
+      await rbacService.createRole(createData)
+      
+      // Refresh all data to ensure UI shows latest roles
+      await loadData()
+      
       setIsCreateDialogOpen(false)
       resetForm()
       toast.success("Role created successfully")
@@ -92,18 +99,22 @@ export default function RoleManagement() {
         permissions: formData.permissions
       }
 
-      const updatedRole = await rbacService.updateRole(editingRole.id, updateData)
+      console.log('🔄 Updating role:', editingRole.name, 'with permissions:', formData.permissions);
+      await rbacService.updateRole(editingRole.id, updateData)
+      console.log('✅ Role update API call successful');
       
-      const updatedRoles = roles.map(role => 
-        role.id === editingRole.id ? updatedRole : role
-      )
-
-      setRoles(updatedRoles)
+      // Clear form state first to prevent stale data
       setEditingRole(null)
       resetForm()
+      
+      // Refresh all data to ensure UI shows latest permissions
+      console.log('🔄 Refreshing role data...');
+      await loadData()
+      console.log('✅ Role data refreshed successfully');
+      
       toast.success("Role updated successfully")
     } catch (error) {
-      console.error('Failed to update role:', error)
+      console.error('❌ Failed to update role:', error)
       toast.error('Failed to update role')
     } finally {
       setIsSubmitting(false)
@@ -119,7 +130,10 @@ export default function RoleManagement() {
 
     try {
       await rbacService.deleteRole(roleId)
-      setRoles(roles.filter(r => r.id !== roleId))
+      
+      // Refresh all data to ensure UI shows latest roles
+      await loadData()
+      
       toast.success("Role deleted successfully")
     } catch (error) {
       console.error('Failed to delete role:', error)
@@ -141,12 +155,18 @@ export default function RoleManagement() {
   }
 
   const openEditDialog = (role: ApiRole) => {
+    // Always use the most current role data from state to avoid stale data issues
+    const currentRole = roles.find(r => r.id === role.id) || role;
+    
+    console.log('🔧 Opening edit dialog for role:', currentRole.name);
+    console.log('🔧 Current permissions:', currentRole.permissions?.map(p => p.code) || []);
+    
     setFormData({
-      name: role.name,
-      description: role.description || "",
-      permissions: role.permissions?.map(p => p.id) || []
+      name: currentRole.name,
+      description: currentRole.description || "",
+      permissions: currentRole.permissions?.map(p => p.id) || []
     })
-    setEditingRole(role)
+    setEditingRole(currentRole)
   }
 
   const closeEditDialog = () => {
@@ -184,6 +204,15 @@ export default function RoleManagement() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            onClick={loadData} 
+            disabled={isLoading}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={openCreateDialog} className="bg-black hover:bg-gray-800 text-white">

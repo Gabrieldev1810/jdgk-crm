@@ -43,6 +43,21 @@ let CallsController = class CallsController {
     async remove(id) {
         return this.callsService.remove(id);
     }
+    async initiateCall(initiateCallDto) {
+        return this.callsService.initiateVicidialCall(initiateCallDto.phoneNumber, initiateCallDto.agentId, initiateCallDto.accountId);
+    }
+    async hangupCall(callId) {
+        return this.callsService.hangupVicidialCall(callId);
+    }
+    async getCallStatus(callId) {
+        return this.callsService.getVicidialCallStatus(callId);
+    }
+    async getRecording(id) {
+        return this.callsService.getCallRecording(id);
+    }
+    async uploadRecording(id, recordingData) {
+        return this.callsService.updateCallRecording(id, recordingData.recordingUrl);
+    }
 };
 exports.CallsController = CallsController;
 __decorate([
@@ -159,6 +174,71 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], CallsController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('vicidial/initiate'),
+    (0, swagger_1.ApiOperation)({ summary: 'Initiate a call through VICIdial' }),
+    (0, swagger_1.ApiResponse)({
+        status: common_1.HttpStatus.OK,
+        description: 'Call initiated successfully',
+    }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], CallsController.prototype, "initiateCall", null);
+__decorate([
+    (0, common_1.Post)('vicidial/hangup/:callId'),
+    (0, swagger_1.ApiOperation)({ summary: 'Hangup a VICIdial call' }),
+    (0, swagger_1.ApiParam)({ name: 'callId', description: 'Call ID' }),
+    (0, swagger_1.ApiResponse)({
+        status: common_1.HttpStatus.OK,
+        description: 'Call ended successfully',
+    }),
+    __param(0, (0, common_1.Param)('callId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], CallsController.prototype, "hangupCall", null);
+__decorate([
+    (0, common_1.Get)('vicidial/status/:callId'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get VICIdial call status' }),
+    (0, swagger_1.ApiParam)({ name: 'callId', description: 'Call ID' }),
+    (0, swagger_1.ApiResponse)({
+        status: common_1.HttpStatus.OK,
+        description: 'Call status retrieved successfully',
+    }),
+    __param(0, (0, common_1.Param)('callId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], CallsController.prototype, "getCallStatus", null);
+__decorate([
+    (0, common_1.Get)(':id/recording'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get call recording' }),
+    (0, swagger_1.ApiParam)({ name: 'id', description: 'Call ID' }),
+    (0, swagger_1.ApiResponse)({
+        status: common_1.HttpStatus.OK,
+        description: 'Call recording retrieved successfully',
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], CallsController.prototype, "getRecording", null);
+__decorate([
+    (0, common_1.Post)(':id/recording'),
+    (0, swagger_1.ApiOperation)({ summary: 'Upload call recording' }),
+    (0, swagger_1.ApiParam)({ name: 'id', description: 'Call ID' }),
+    (0, swagger_1.ApiResponse)({
+        status: common_1.HttpStatus.OK,
+        description: 'Call recording uploaded successfully',
+    }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], CallsController.prototype, "uploadRecording", null);
 exports.CallsController = CallsController = __decorate([
     (0, swagger_1.ApiTags)('calls'),
     (0, swagger_1.ApiBearerAuth)(),
