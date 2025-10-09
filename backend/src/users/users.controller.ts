@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AuditLoggingService } from '../common/services/audit-logging.service';
+import { PermissionCacheService } from '../common/services/permission-cache.service';
 
 @ApiTags('users')
 @Controller('users')
@@ -15,6 +16,7 @@ export class UsersController {
   constructor(
     private usersService: UsersService,
     private auditService: AuditLoggingService,
+    private permissionCacheService: PermissionCacheService,
   ) {}
 
   @ApiOperation({ summary: 'Get all users (Admin only)' })
@@ -241,5 +243,67 @@ export class UsersController {
   @Get(':id/permissions')
   async getUserPermissions(@Param('id') id: string) {
     return this.usersService.getUserPermissions(id);
+  }
+
+  @ApiOperation({ summary: 'Refresh user permissions cache' })
+  @ApiResponse({ status: 200, description: 'User permissions cache refreshed successfully' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @Post(':id/refresh-permissions')
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  async refreshUserPermissions(@Param('id') userId: string, @Request() req) {
+    try {
+      // Verify user exists
+      const user = await this.usersService.findById(userId);
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found',
+          timestamp: new Date().toISOString()
+        };
+      }
+
+      // Invalidate user permission cache
+      await this.permissionCacheService.invalidateUserCache(
+        userId, 
+        'Manual refresh via admin interface'
+      );
+
+      // Get fresh permissions from database
+      const freshPermissions = await this.usersService.getUserPermissions(userId);
+
+      // Log the action
+      await this.auditService.logAuditEvent({
+        userId: req.user.id,
+        action: 'REFRESH_PERMISSIONS',
+        resource: 'USER_PERMISSIONS',
+        resourceId: userId,
+        details: {
+          targetUser: user.email,
+          permissionCount: freshPermissions.length
+        },
+        success: true,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent')
+      });
+
+      return {
+        success: true,
+        message: 'User permissions refreshed successfully',
+        user: {
+          id: user.id,
+          email: user.email
+        },
+        permissions: freshPermissions.map(p => p.code),
+        permissionCount: freshPermissions.length,
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Failed to refresh permissions: ' + error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 }
