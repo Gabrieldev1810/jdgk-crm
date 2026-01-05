@@ -110,7 +110,7 @@ export function CurrentCallCard({
                                     </Button>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
                                     <div>
                                         <p className="text-sm font-medium text-muted-foreground mb-1">Current Balance</p>
                                         <p className="text-2xl font-bold text-primary">{formatCurrency(activeAccount.currentBalance)}</p>

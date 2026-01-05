@@ -1888,168 +1888,170 @@ export default function Accounts() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Account ID</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Phone Numbers</TableHead>
-                <TableHead>Bank Partner</TableHead>
-                <TableHead>Balance</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Secondary Status</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead>Agent</TableHead>
-                <TableHead>Assigned Date</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                // Loading state
-                Array.from({ length: 5 }).map((_, index) => (
-                  <TableRow key={`loading-${index}`}>
-                    <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
-                    <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
-                    <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
-                    <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
-                    <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
-                    <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
-                    <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
-                    <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
-                    <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
-                    <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
-                  </TableRow>
-                ))
-              ) : error ? (
-                // Error state
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-12">
-                    <div className="text-red-500 mb-2">{error}</div>
-                    <Button
-                      onClick={() => loadAccounts()}
-                      variant="outline"
-                      size="sm"
+                  <TableHead>Account ID</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Phone Numbers</TableHead>
+                  <TableHead>Bank Partner</TableHead>
+                  <TableHead>Balance</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Secondary Status</TableHead>
+                  <TableHead>Due Date</TableHead>
+                  <TableHead>Agent</TableHead>
+                  <TableHead>Assigned Date</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  // Loading state
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={`loading-${index}`}>
+                      <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                      <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                      <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                      <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                      <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                      <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                      <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                      <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                      <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                      <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                    </TableRow>
+                  ))
+                ) : error ? (
+                  // Error state
+                  <TableRow>
+                    <TableCell colSpan={10} className="text-center py-12">
+                      <div className="text-red-500 mb-2">{error}</div>
+                      <Button
+                        onClick={() => loadAccounts()}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Try Again
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ) : filteredAccounts.length === 0 ? (
+                  // Empty state
+                  <TableRow>
+                    <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
+                      No accounts found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  // Data rows
+                  filteredAccounts.map((account, index) => (
+                    <TableRow
+                      key={account.id}
+                      className="animate-slide-up"
+                      style={{ animationDelay: `${index * 0.05}s` }}
                     >
-                      Try Again
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ) : filteredAccounts.length === 0 ? (
-                // Empty state
-                <TableRow>
-                  <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
-                    No accounts found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                // Data rows
-                filteredAccounts.map((account, index) => (
-                  <TableRow
-                    key={account.id}
-                    className="animate-slide-up"
-                    style={{ animationDelay: `${index * 0.05}s` }}
-                  >
-                    <TableCell>
-                      <div className="font-mono text-sm font-bold text-accent">{account.accountId}</div>
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      <div className="flex flex-col">
-                        <span className="text-foreground">{account.name}</span>
-                        <span className="text-xs text-muted-foreground">{account.accountId}</span>
-                        {account.phoneNumbers.some(p => activeLivePhones.has(p)) && (
-                          <Badge variant="destructive" className="w-fit mt-1 text-[10px] px-1 py-0 h-5">
-                            IN CALL
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        {account.phoneNumbers.map((phone, idx) => (
-                          <div key={idx} className="font-mono text-sm flex items-center">
-                            <Phone className="w-3 h-3 mr-1 text-muted-foreground" />
-                            {phone}
-                            {idx === 0 && account.phoneNumbers.length > 1 && (
-                              <Badge variant="outline" className="ml-2 text-xs">Primary</Badge>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm font-medium">{account.bankPartner}</div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-mono font-bold text-foreground">
-                        {formatCurrency(account.balance)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getStatusColor(account.status)}>
-                        <span className="mr-1">{getStatusIcon(account.status)}</span>
-                        {account.status.replace('_', ' ').toUpperCase()}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm font-medium text-muted-foreground">
-                        {account.secondaryStatus || '-'}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-mono text-sm">{account.dueDate}</div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm">{account.agent}</div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm text-muted-foreground">
-                        {account.assignedDate ? new Date(account.assignedDate).toLocaleDateString() : '-'}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="glass-light"
-                          onClick={() => handleManualCall(account)}
-                        >
-                          <Phone className="w-4 h-4 mr-1" />
-                          Call
-                        </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="glass-dropdown">
-                            <DropdownMenuItem onClick={() => handleViewDetails(account)}>
-                              View Details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleEditAccount(account)}>
-                              Edit Account
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleCallHistory(account)}>
-                              Call History
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleUpdateStatus(account)}>
-                              Update Status
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-destructive" onClick={() => handleRemoveAccount(account)}>
-                              Remove Account
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                      <TableCell>
+                        <div className="font-mono text-sm font-bold text-accent">{account.accountId}</div>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex flex-col">
+                          <span className="text-foreground">{account.name}</span>
+                          <span className="text-xs text-muted-foreground">{account.accountId}</span>
+                          {account.phoneNumbers.some(p => activeLivePhones.has(p)) && (
+                            <Badge variant="destructive" className="w-fit mt-1 text-[10px] px-1 py-0 h-5">
+                              IN CALL
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          {account.phoneNumbers.map((phone, idx) => (
+                            <div key={idx} className="font-mono text-sm flex items-center">
+                              <Phone className="w-3 h-3 mr-1 text-muted-foreground" />
+                              {phone}
+                              {idx === 0 && account.phoneNumbers.length > 1 && (
+                                <Badge variant="outline" className="ml-2 text-xs">Primary</Badge>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm font-medium">{account.bankPartner}</div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-mono font-bold text-foreground">
+                          {formatCurrency(account.balance)}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getStatusColor(account.status)}>
+                          <span className="mr-1">{getStatusIcon(account.status)}</span>
+                          {account.status.replace('_', ' ').toUpperCase()}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm font-medium text-muted-foreground">
+                          {account.secondaryStatus || '-'}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-mono text-sm">{account.dueDate}</div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">{account.agent}</div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm text-muted-foreground">
+                          {account.assignedDate ? new Date(account.assignedDate).toLocaleDateString() : '-'}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end space-x-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="glass-light"
+                            onClick={() => handleManualCall(account)}
+                          >
+                            <Phone className="w-4 h-4 mr-1" />
+                            Call
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="glass-dropdown">
+                              <DropdownMenuItem onClick={() => handleViewDetails(account)}>
+                                View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleEditAccount(account)}>
+                                Edit Account
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleCallHistory(account)}>
+                                Call History
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleUpdateStatus(account)}>
+                                Update Status
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-destructive" onClick={() => handleRemoveAccount(account)}>
+                                Remove Account
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
 
           {filteredAccounts.length === 0 && (
             <div className="text-center py-12">
