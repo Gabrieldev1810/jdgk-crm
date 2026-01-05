@@ -33,7 +33,7 @@ services:
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1h}
       - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-7d}
       - PORT=3000
-      - FRONTEND_URL=${FRONTEND_URL:-https://staging.digiedgesolutions.cloud}
+      - FRONTEND_URL=${FRONTEND_URL}
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:3000/health || curl -f http://localhost:3000/ || exit 1" ]
       interval: 30s

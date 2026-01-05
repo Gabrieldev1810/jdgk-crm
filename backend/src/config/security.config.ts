@@ -104,12 +104,7 @@ export const getSecurityConfig = (configService: ConfigService): SecurityConfig 
 
     cors: {
       origin: [
-        configService.get('FRONTEND_URL') || 'http://localhost:8080',
-        'https://staging.digiedgesolutions.cloud',
-        'http://staging.digiedgesolutions.cloud',
-        'https://digiedgesolutions.cloud',
-        'http://digiedgesolutions.cloud',
-        'https://*.digiedgesolutions.cloud',
+        configService.get('FRONTEND_URL'),
         ...(isDevelopment ? [
           'http://localhost:5173', // Vite
           'http://localhost:3000', // React
@@ -172,7 +167,7 @@ export const validateSecurityHeaders = (headers: Record<string, any>) => {
   ];
 
   const missing = requiredHeaders.filter(header => !headers[header]);
-  
+
   if (missing.length > 0) {
     console.warn(`⚠️  Missing security headers: ${missing.join(', ')}`);
   }

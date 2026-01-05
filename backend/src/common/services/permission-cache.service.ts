@@ -381,18 +381,19 @@ export class PermissionCacheService {
     });
 
     // Fetch user-specific granted permissions
-    const grantedPermissions = await this.prisma.userPermission.findMany({
-      where: {
-        userId,
-        OR: [
-          { expiresAt: null },
-          { expiresAt: { gt: new Date() } }
-        ]
-      },
-      include: {
-        permission: true
-      }
-    });
+    // const grantedPermissions = await this.prisma.userPermission.findMany({
+    //   where: {
+    //     userId,
+    //     OR: [
+    //       { expiresAt: null },
+    //       { expiresAt: { gt: new Date() } }
+    //     ]
+    //   },
+    //   include: {
+    //     permission: true
+    //   }
+    // });
+    const grantedPermissions: any[] = []; // Placeholder
 
     // Process roles and permissions
     const roles = userRoles.map(ur => ur.role.name);
@@ -410,9 +411,9 @@ export class PermissionCacheService {
         permissions.add(rp.permission.code);
       });
     });
-    grantedPermissions.forEach(up => {
-      permissions.add(up.permission.code);
-    });
+    // grantedPermissions.forEach(up => {
+    //   permissions.add(up.permission.code);
+    // });
 
     const result = [...permissions];
     this.logger.log(`Fetched ${result.length} permissions for user ${userId}: ${result.join(', ')}`);
