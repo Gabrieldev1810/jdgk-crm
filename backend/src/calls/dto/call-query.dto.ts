@@ -1,7 +1,7 @@
 import { IsOptional, IsString, IsDateString, IsEnum, IsNumber, Min, Max } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { CallDirection, CallStatus, CallDisposition } from './create-call.dto';
+import { CallDirection, CallStatus } from './create-call.dto';
 
 export class CallQueryDto {
   @ApiPropertyOptional({ description: 'Account ID to filter by' })
@@ -24,10 +24,10 @@ export class CallQueryDto {
   @IsEnum(CallStatus)
   status?: CallStatus;
 
-  @ApiPropertyOptional({ enum: CallDisposition, description: 'Call disposition filter' })
+  @ApiPropertyOptional({ description: 'Call disposition filter' })
   @IsOptional()
-  @IsEnum(CallDisposition)
-  disposition?: CallDisposition;
+  @IsString()
+  disposition?: string;
 
   @ApiPropertyOptional({ description: 'Start date filter (YYYY-MM-DD)' })
   @IsOptional()
@@ -38,6 +38,16 @@ export class CallQueryDto {
   @IsOptional()
   @IsDateString()
   endDate?: string;
+
+  @ApiPropertyOptional({ description: 'Campaign ID filter' })
+  @IsOptional()
+  @IsString()
+  campaignId?: string;
+
+  @ApiPropertyOptional({ description: 'VICIdial Call ID filter' })
+  @IsOptional()
+  @IsString()
+  vicidialCallId?: string;
 
   @ApiPropertyOptional({ description: 'Page number', default: 1 })
   @IsOptional()

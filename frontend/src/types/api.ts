@@ -38,6 +38,12 @@ export interface User {
   lastLoginAt?: string;
   createdAt: string;
   updatedAt: string;
+  department?: string;
+  location?: string;
+  phoneNumber?: string;
+  employeeId?: string;
+  avatar?: string;
+  vicidialUserId?: string;
 }
 
 export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'AGENT';
@@ -61,6 +67,13 @@ export interface UpdateUserRequest {
 // ================================
 // ACCOUNT MANAGEMENT TYPES
 // ================================
+export interface AccountPhone {
+  id: string;
+  phoneNumber: string;
+  phoneType: string;
+  isValid: boolean;
+}
+
 export interface Account {
   id: string;
   accountNumber: string;
@@ -81,6 +94,7 @@ export interface Account {
   lastPaymentDate?: string;
   lastPaymentAmount?: number;
   status: AccountStatus;
+  secondaryStatus?: string;
   priority: AccountPriority;
   assignedAgentId?: string;
   assignedAgent?: User;
@@ -102,10 +116,17 @@ export interface Account {
   batchId?: string;
   createdAt: string;
   updatedAt: string;
+  phoneNumbers?: AccountPhone[];
 }
 
 export type AccountStatus = 'NEW' | 'ACTIVE' | 'PTP' | 'PAID' | 'SKIP' | 'DELETED';
 export type AccountPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+export interface CreateAccountPhoneRequest {
+  phoneNumber: string;
+  phoneType?: string;
+  isValid?: boolean;
+}
 
 export interface CreateAccountRequest {
   accountNumber: string;
@@ -123,6 +144,7 @@ export interface CreateAccountRequest {
   priority?: AccountPriority;
   preferredContactMethod?: string;
   notes?: string;
+  phoneNumbers?: CreateAccountPhoneRequest[];
 }
 
 export interface UpdateAccountRequest {
@@ -146,20 +168,28 @@ export interface AccountSearchParams {
   limit?: number;
   search?: string;
   status?: AccountStatus;
-  assignedTo?: string;
+  agentId?: string;
+  assignedTo?: string; // Deprecated, use agentId
+  campaignId?: string;
   minBalance?: number;
   maxBalance?: number;
   sortBy?: 'firstName' | 'lastName' | 'currentBalance' | 'createdAt' | 'updatedAt';
   sortOrder?: 'asc' | 'desc';
+  phoneNumbers?: string[];
 }
 
 export interface AccountStatistics {
   totalAccounts: number;
+  totalCollections: number;
+  totalBalance: number;
+  teamQuota?: number;
   accountsByStatus: {
     active: number;
     new: number;
     ptp: number;
     paid: number;
+    touched?: number;
+    [key: string]: number | undefined;
   };
   financialMetrics?: {
     totalBalance: number;
@@ -408,18 +438,26 @@ export interface BulkUploadRequest {
   file: File;
   skipDuplicates?: boolean;
   updateExisting?: boolean;
+  campaignId?: string;
 }
 
 export interface BulkUploadResponse {
   success: boolean;
-  summary: {
-    totalRows: number;
-    successfulRows: number;
-    failedRows: number;
-    duplicateRows: number;
-  };
+  message?: string;
+  data?: BulkUploadResult;
+  error?: string;
   errors?: BulkUploadError[];
-  data?: Account[];
+}
+
+export interface BulkUploadResult {
+  batchId: string;
+  status: 'processing' | 'completed' | 'failed';
+  totalRecords: number;
+  successfulRecords: number;
+  failedRecords: number;
+  duplicates: number;
+  message: string;
+  errors?: BulkUploadError[];
 }
 
 export interface BulkUploadError {

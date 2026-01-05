@@ -24,18 +24,18 @@ export interface CacheStatistics {
 @Injectable()
 export class PermissionCacheService {
   private readonly logger = new Logger(PermissionCacheService.name);
-  
+
   // Cache key prefixes for organization
   private readonly PERMISSION_PREFIX = 'permissions:user:';
   private readonly ROLE_PREFIX = 'roles:user:';
   private readonly STATS_PREFIX = 'cache:stats:';
   private readonly INVALIDATION_PREFIX = 'invalidate:';
-  
+
   // Cache configuration
   private readonly DEFAULT_TTL = 15 * 60 * 1000; // 15 minutes
   private readonly STATS_TTL = 24 * 60 * 60 * 1000; // 24 hours
   private readonly MAX_CACHE_SIZE = 10000; // Maximum cached users
-  
+
   // Performance tracking
   private stats = {
     hitCount: 0,
@@ -47,23 +47,31 @@ export class PermissionCacheService {
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     private prisma: PrismaService,
     private auditService: AuditLoggingService,
-  ) {}
+  ) { }
+
+  /**
+   * Check if user has a specific permission
+   */
+  async hasPermission(userId: string, permissionCode: string): Promise<boolean> {
+    const permissions = await this.getUserPermissions(userId);
+    return permissions.includes(permissionCode);
+  }
 
   /**
    * Get user permissions with caching
    */
   async getUserPermissions(userId: string): Promise<string[]> {
     const startTime = Date.now();
-    
+
     try {
       // Try cache first
       const cacheKey = this.PERMISSION_PREFIX + userId;
       const cached = await this.cacheManager.get<CachedUserPermissions>(cacheKey);
-      
+
       if (cached && this.isCacheValid(cached)) {
         this.stats.hitCount++;
         this.updateResponseTime(startTime);
-        
+
         this.logger.debug(`Cache HIT for user ${userId} permissions`);
         return cached.permissions;
       }
@@ -71,18 +79,18 @@ export class PermissionCacheService {
       // Cache miss - fetch from database
       this.stats.missCount++;
       this.logger.debug(`Cache MISS for user ${userId} permissions`);
-      
+
       const permissions = await this.fetchUserPermissionsFromDb(userId);
-      
+
       // Cache the result
       await this.cacheUserPermissions(userId, permissions);
-      
+
       this.updateResponseTime(startTime);
       return permissions;
-      
+
     } catch (error) {
       this.logger.error(`Failed to get permissions for user ${userId}:`, error);
-      
+
       // Fallback to direct database query
       return this.fetchUserPermissionsFromDb(userId);
     }
@@ -93,11 +101,11 @@ export class PermissionCacheService {
    */
   async getUserRoles(userId: string): Promise<string[]> {
     const startTime = Date.now();
-    
+
     try {
       const cacheKey = this.ROLE_PREFIX + userId;
       const cached = await this.cacheManager.get<string[]>(cacheKey);
-      
+
       if (cached) {
         this.stats.hitCount++;
         this.updateResponseTime(startTime);
@@ -107,13 +115,13 @@ export class PermissionCacheService {
       // Cache miss - fetch from database
       this.stats.missCount++;
       const roles = await this.fetchUserRolesFromDb(userId);
-      
+
       // Cache the result
       await this.cacheManager.set(cacheKey, roles, this.DEFAULT_TTL);
-      
+
       this.updateResponseTime(startTime);
       return roles;
-      
+
     } catch (error) {
       this.logger.error(`Failed to get roles for user ${userId}:`, error);
       return this.fetchUserRolesFromDb(userId);
@@ -127,14 +135,14 @@ export class PermissionCacheService {
     try {
       const permissionKey = this.PERMISSION_PREFIX + userId;
       const roleKey = this.ROLE_PREFIX + userId;
-      
+
       await Promise.all([
         this.cacheManager.del(permissionKey),
         this.cacheManager.del(roleKey),
       ]);
-      
+
       this.logger.log(`Invalidated cache for user ${userId}: ${reason}`);
-      
+
       // Log cache invalidation event
       await this.auditService.logAuditEvent({
         userId,
@@ -143,7 +151,7 @@ export class PermissionCacheService {
         details: { reason, keys: [permissionKey, roleKey] },
         success: true,
       });
-      
+
     } catch (error) {
       this.logger.error(`Failed to invalidate cache for user ${userId}:`, error);
     }
@@ -155,16 +163,16 @@ export class PermissionCacheService {
   async invalidateMultipleUsers(userIds: string[], reason: string = 'Bulk invalidation'): Promise<void> {
     try {
       const keys: string[] = [];
-      
+
       userIds.forEach(userId => {
         keys.push(this.PERMISSION_PREFIX + userId);
         keys.push(this.ROLE_PREFIX + userId);
       });
-      
+
       await Promise.all(keys.map(key => this.cacheManager.del(key)));
-      
+
       this.logger.log(`Bulk invalidated cache for ${userIds.length} users: ${reason}`);
-      
+
       // Log bulk cache invalidation
       await this.auditService.logAuditEvent({
         action: 'BULK_CACHE_INVALIDATION',
@@ -172,7 +180,7 @@ export class PermissionCacheService {
         details: { reason, userCount: userIds.length, userIds },
         success: true,
       });
-      
+
     } catch (error) {
       this.logger.error(`Failed to bulk invalidate cache:`, error);
     }
@@ -188,13 +196,13 @@ export class PermissionCacheService {
         where: { roleId, isActive: true },
         select: { userId: true },
       });
-      
+
       const userIds = usersWithRole.map(ur => ur.userId);
-      
+
       if (userIds.length > 0) {
         await this.invalidateMultipleUsers(userIds, `Role ${roleId} modified: ${reason}`);
       }
-      
+
     } catch (error) {
       this.logger.error(`Failed to invalidate cache for role ${roleId}:`, error);
     }
@@ -210,23 +218,23 @@ export class PermissionCacheService {
         where: { permissionId },
         select: { roleId: true },
       });
-      
+
       // Get all users with these roles
       const roleIds = rolesWithPermission.map(rp => rp.roleId);
-      
+
       if (roleIds.length > 0) {
         const usersWithRoles = await this.prisma.userRole.findMany({
           where: { roleId: { in: roleIds }, isActive: true },
           select: { userId: true },
         });
-        
+
         const userIds = [...new Set(usersWithRoles.map(ur => ur.userId))]; // Remove duplicates
-        
+
         if (userIds.length > 0) {
           await this.invalidateMultipleUsers(userIds, `Permission ${permissionId} modified: ${reason}`);
         }
       }
-      
+
     } catch (error) {
       this.logger.error(`Failed to invalidate cache for permission ${permissionId}:`, error);
     }
@@ -238,7 +246,7 @@ export class PermissionCacheService {
   async warmUpCache(userIds?: string[]): Promise<void> {
     try {
       let targetUserIds = userIds;
-      
+
       if (!targetUserIds) {
         // Get most active users from recent audit logs
         const recentActiveUsers = await this.prisma.auditLog.groupBy({
@@ -251,19 +259,19 @@ export class PermissionCacheService {
           orderBy: { _count: { actorId: 'desc' } },
           take: 100, // Top 100 active users
         });
-        
+
         targetUserIds = recentActiveUsers
           .map(u => u.actorId)
           .filter(id => id !== null) as string[];
       }
-      
+
       this.logger.log(`Starting cache warm-up for ${targetUserIds.length} users...`);
-      
+
       // Pre-load permissions and roles in batches to avoid overwhelming the database
       const batchSize = 10;
       for (let i = 0; i < targetUserIds.length; i += batchSize) {
         const batch = targetUserIds.slice(i, i + batchSize);
-        
+
         await Promise.all(
           batch.map(async userId => {
             try {
@@ -276,15 +284,15 @@ export class PermissionCacheService {
             }
           })
         );
-        
+
         // Small delay between batches to prevent database overload
         if (i + batchSize < targetUserIds.length) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
-      
+
       this.logger.log(`Cache warm-up completed for ${targetUserIds.length} users`);
-      
+
     } catch (error) {
       this.logger.error(`Cache warm-up failed:`, error);
     }
@@ -297,7 +305,7 @@ export class PermissionCacheService {
     const totalRequests = this.stats.hitCount + this.stats.missCount;
     const hitRate = totalRequests > 0 ? (this.stats.hitCount / totalRequests) * 100 : 0;
     const averageResponseTime = totalRequests > 0 ? this.stats.totalResponseTime / totalRequests : 0;
-    
+
     return {
       hitCount: this.stats.hitCount,
       missCount: this.stats.missCount,
@@ -317,23 +325,23 @@ export class PermissionCacheService {
       // Note: cache-manager doesn't have reset() method, so we'll implement manual clearing
       const keysToDelete = []; // Would implement proper key scanning in production
       this.logger.warn('Cache reset not available - implement manual key deletion for production');
-      
+
       this.logger.warn('ALL PERMISSION CACHE CLEARED - This affects performance');
-      
+
       // Reset stats
       this.stats = {
         hitCount: 0,
         missCount: 0,
         totalResponseTime: 0,
       };
-      
+
       await this.auditService.logAuditEvent({
         action: 'CACHE_FULL_CLEAR',
         resource: 'PERMISSION_CACHE',
         details: { reason: 'Manual cache clear' },
         success: true,
       });
-      
+
     } catch (error) {
       this.logger.error('Failed to clear cache:', error);
       throw error;
@@ -345,7 +353,7 @@ export class PermissionCacheService {
    */
   private async fetchUserPermissionsFromDb(userId: string): Promise<string[]> {
     const userRoles = await this.prisma.userRole.findMany({
-      where: { 
+      where: {
         userId,
         isActive: true,
         OR: [
@@ -372,18 +380,48 @@ export class PermissionCacheService {
       }
     });
 
-    // Flatten permissions from all roles
-    const permissions = userRoles.flatMap(ur =>
-      ur.role.permissions.map(rp => rp.permission.code)
-    );
+    // Fetch user-specific granted permissions
+    const grantedPermissions = await this.prisma.userPermission.findMany({
+      where: {
+        userId,
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } }
+        ]
+      },
+      include: {
+        permission: true
+      }
+    });
 
-    // Remove duplicates
-    return [...new Set(permissions)];
+    // Process roles and permissions
+    const roles = userRoles.map(ur => ur.role.name);
+    const isSuperAdmin = roles.includes('SUPER_ADMIN') || roles.includes('ADMIN') || roles.includes('Administrator'); // Handle legacy/seed role names
+
+    // Collect all permissions
+    const permissions = new Set<string>();
+
+    if (isSuperAdmin) {
+      permissions.add('*');
+    }
+
+    userRoles.forEach(ur => {
+      ur.role.permissions.forEach(rp => {
+        permissions.add(rp.permission.code);
+      });
+    });
+    grantedPermissions.forEach(up => {
+      permissions.add(up.permission.code);
+    });
+
+    const result = [...permissions];
+    this.logger.log(`Fetched ${result.length} permissions for user ${userId}: ${result.join(', ')}`);
+    return result;
   }
 
   private async fetchUserRolesFromDb(userId: string): Promise<string[]> {
     const userRoles = await this.prisma.userRole.findMany({
-      where: { 
+      where: {
         userId,
         isActive: true,
         OR: [

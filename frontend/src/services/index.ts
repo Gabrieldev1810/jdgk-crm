@@ -3,8 +3,11 @@
 export { api, apiClient } from './api';
 export { auth, authService } from './auth';
 export { accountService } from './accounts';
+export { callsService } from './calls';
 export { rbacService } from './rbac';
 export { usersService } from './users';
+export { vicidialService } from './vicidial';
+export { settingsService } from './settings';
 
 // Re-export types for convenience
 export type {

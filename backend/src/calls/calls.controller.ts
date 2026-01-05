@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   HttpStatus,
+  Request,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -57,12 +58,17 @@ export class CallsController {
   @Get('statistics')
   @ApiOperation({ summary: 'Get call statistics' })
   @ApiQuery({ name: 'accountId', required: false, description: 'Filter statistics by account ID' })
+  @ApiQuery({ name: 'agentId', required: false, description: 'Filter statistics by agent ID' })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Call statistics retrieved successfully',
   })
-  async getStatistics(@Query('accountId') accountId?: string) {
-    return this.callsService.getCallStatistics(accountId);
+  async getStatistics(
+    @Query('accountId') accountId?: string,
+    @Query('agentId') agentId?: string,
+    @Request() req?: any,
+  ) {
+    return this.callsService.getCallStatistics(accountId, agentId, req?.user);
   }
 
   @Get('account/:accountId')

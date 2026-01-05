@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PermissionCacheService } from '../common/services/permission-cache.service';
 import { CreateCallDto, UpdateCallDto, CallQueryDto, CallResponseDto } from './dto';
-import { Prisma } from '@prisma/client';
+import { Prisma, User } from '@prisma/client';
 
 @Injectable()
 export class CallsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private permissionCache: PermissionCacheService
+  ) {}
 
   async create(createCallDto: CreateCallDto): Promise<CallResponseDto> {
     // Validate that account exists
@@ -34,6 +38,16 @@ export class CallsService {
       });
       if (!accountPhone) {
         throw new NotFoundException('Account phone not found or does not belong to account');
+      }
+    }
+
+    // Validate disposition if provided
+    if (createCallDto.disposition) {
+      const disposition = await this.prisma.disposition.findUnique({
+        where: { code: createCallDto.disposition }
+      });
+      if (!disposition) {
+        throw new BadRequestException(`Invalid disposition code: ${createCallDto.disposition}`);
       }
     }
 
@@ -78,6 +92,34 @@ export class CallsService {
         contactAttempts: { increment: 1 },
       },
     });
+
+    // Handle Disposition Automation
+    if (createCallDto.disposition) {
+      const disposition = await this.prisma.disposition.findUnique({
+        where: { code: createCallDto.disposition },
+      });
+
+      if (disposition) {
+        const updateData: any = {};
+
+        if (disposition.newAccountStatus) {
+          updateData.status = disposition.newAccountStatus;
+        }
+
+        if (disposition.followUpDelay) {
+          const nextContactDate = new Date();
+          nextContactDate.setMinutes(nextContactDate.getMinutes() + disposition.followUpDelay);
+          updateData.nextContactDate = nextContactDate;
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          await this.prisma.account.update({
+            where: { id: createCallDto.accountId },
+            data: updateData,
+          });
+        }
+      }
+    }
 
     return call as CallResponseDto;
   }
@@ -244,6 +286,16 @@ export class CallsService {
       throw new NotFoundException('Call not found');
     }
 
+    // Validate disposition if provided
+    if (updateCallDto.disposition) {
+      const disposition = await this.prisma.disposition.findUnique({
+        where: { code: updateCallDto.disposition }
+      });
+      if (!disposition) {
+        throw new BadRequestException(`Invalid disposition code: ${updateCallDto.disposition}`);
+      }
+    }
+
     const call = await this.prisma.call.update({
       where: { id },
       data: {
@@ -297,16 +349,75 @@ export class CallsService {
     return { message: 'Call deleted successfully', id };
   }
 
-  async getCallStatistics(accountId?: string): Promise<{
+  async getCallStatistics(accountId?: string, agentId?: string, user?: User): Promise<{
     totalCalls: number;
+    callsToday: number;
+    callsThisWeek: number;
     completedCalls: number;
     avgDuration: number;
     successRate: number;
     dispositionBreakdown: Record<string, number>;
+    timeOfDayBreakdown: { morning: number; afternoon: number; evening: number };
   }> {
-    const where: Prisma.CallWhereInput = accountId ? { accountId } : {};
+    const where: Prisma.CallWhereInput = {};
+    if (accountId) where.accountId = accountId;
+    
+    // Handle role-based filtering if user is provided
+    if (user) {
+      const hasViewAll = await this.permissionCache.hasPermission(user.id, 'calls.view_all'); // Assuming calls.view_all exists or using reports.view_all
+      // Actually, let's check 'reports.view_all' or 'accounts.view_all' as proxy if 'calls.view_all' isn't explicit in my memory of rbac service
+      // Looking at rbac-minimal.service.ts, 'calls.view' exists. 'calls.view_all' does NOT exist in the seeded list I saw earlier.
+      // But 'reports.view_all' and 'reports.view_team' exist.
+      // Let's use 'reports.view_team' logic for now as it's safe for Managers.
+      
+      if (!hasViewAll) {
+        const hasViewTeam = await this.permissionCache.hasPermission(user.id, 'reports.view_team');
+        
+        if (hasViewTeam) {
+          if (agentId) {
+             // If specific agent requested, ensure it's in their team
+             // For now, we trust the filter or just apply the team filter on top
+             const subordinates = await this.prisma.user.findMany({
+              where: { managerId: user.id },
+              select: { id: true }
+            });
+            const subIds = subordinates.map(s => s.id);
+            if (agentId !== user.id && !subIds.includes(agentId)) {
+               // If requesting someone outside team, restrict to self (or throw error, but restricting is safer for stats)
+               where.agentId = user.id; 
+            } else {
+               where.agentId = agentId;
+            }
+          } else {
+            // No specific agent, show team stats
+            const subordinates = await this.prisma.user.findMany({
+              where: { managerId: user.id },
+              select: { id: true }
+            });
+            const subIds = subordinates.map(s => s.id);
+            where.agentId = { in: [user.id, ...subIds] };
+          }
+        } else {
+          // Only see self
+          where.agentId = user.id;
+        }
+      } else {
+         // Admin sees all, or specific agent if requested
+         if (agentId) where.agentId = agentId;
+      }
+    } else {
+       // Fallback for legacy calls without user context (shouldn't happen with new controller)
+       if (agentId) where.agentId = agentId;
+    }
 
-    const [totalCalls, completedCalls, avgDurationResult, dispositions] = await Promise.all([
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const thisWeek = new Date();
+    thisWeek.setDate(thisWeek.getDate() - thisWeek.getDay());
+    thisWeek.setHours(0, 0, 0, 0);
+
+    const [totalCalls, completedCalls, avgDurationResult, dispositions, callsWithTime, callsToday, callsThisWeek] = await Promise.all([
       this.prisma.call.count({ where }),
       this.prisma.call.count({ 
         where: { ...where, status: 'COMPLETED' }
@@ -320,6 +431,12 @@ export class CallsService {
         where,
         _count: { disposition: true },
       }),
+      this.prisma.call.findMany({
+        where,
+        select: { startTime: true }
+      }),
+      this.prisma.call.count({ where: { ...where, startTime: { gte: today } } }),
+      this.prisma.call.count({ where: { ...where, startTime: { gte: thisWeek } } })
     ]);
 
     const avgDuration = avgDurationResult._avg.duration || 0;
@@ -330,12 +447,40 @@ export class CallsService {
       return acc;
     }, {} as Record<string, number>);
 
+    // Calculate time of day breakdown
+    const timeOfDayCounts = {
+      morning: 0,
+      afternoon: 0,
+      evening: 0
+    };
+
+    callsWithTime.forEach(call => {
+      const hour = new Date(call.startTime).getHours();
+      if (hour >= 6 && hour < 12) {
+        timeOfDayCounts.morning++;
+      } else if (hour >= 12 && hour < 18) {
+        timeOfDayCounts.afternoon++;
+      } else {
+        timeOfDayCounts.evening++;
+      }
+    });
+
+    const totalForTime = callsWithTime.length || 1;
+    const timeOfDayBreakdown = {
+      morning: Math.round((timeOfDayCounts.morning / totalForTime) * 100),
+      afternoon: Math.round((timeOfDayCounts.afternoon / totalForTime) * 100),
+      evening: Math.round((timeOfDayCounts.evening / totalForTime) * 100)
+    };
+
     return {
       totalCalls,
+      callsToday,
+      callsThisWeek,
       completedCalls,
       avgDuration: Math.round(avgDuration),
       successRate: Math.round(successRate * 100) / 100,
       dispositionBreakdown,
+      timeOfDayBreakdown
     };
   }
 

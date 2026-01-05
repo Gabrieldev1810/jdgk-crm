@@ -17,16 +17,17 @@ import {
   Users, 
   Plus,
   Search,
-  Shield,
   Edit,
   Trash2,
   UserCheck,
   UserX,
-  Settings,
-  Lock,
-  Unlock,
   Mail,
-  Phone
+  Phone,
+  Loader2,
+  RefreshCw,
+  Shield,
+  Settings,
+  Lock
 } from "lucide-react"
 
 interface User extends ApiUser {
@@ -45,6 +46,7 @@ interface CreateUserFormData {
   lastName: string;
   role: string;  // Backend expects single role string
   isActive: boolean;
+  vicidialUserId?: string;
 }
 
 interface EditUserFormData {
@@ -53,6 +55,7 @@ interface EditUserFormData {
   lastName?: string;
   role?: string;  // Single role like create user
   isActive?: boolean;
+  vicidialUserId?: string;
 }
 
 // Helper function to transform API user to UI user
@@ -64,6 +67,7 @@ const transformUser = (apiUser: ApiUser): User => ({
   callsToday: 0, // TODO: Integrate with call statistics
   totalCalls: 0, // TODO: Integrate with call statistics
   avatar: "",
+  vicidialUserId: apiUser.vicidialUserId,
 });
 
 // Component helper functions
@@ -103,6 +107,7 @@ function getStatusIcon(status?: User["status"]) {
 }
 
 export default function UserManagement() {
+  // User Management State
   const [users, setUsers] = useState<User[]>([])
   const [roles, setRoles] = useState<ApiRole[]>([])
   const [loading, setLoading] = useState(true)
@@ -120,6 +125,9 @@ export default function UserManagement() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedRole, setSelectedRole] = useState<string>("all")
 
+  // Role Management State - MOVED TO Roles.tsx
+  // Keeping roles state for user assignment dropdowns
+  
   // Development auto-login for testing
   useEffect(() => {
     const autoLogin = async () => {
@@ -180,9 +188,9 @@ export default function UserManagement() {
     };
     
     // Run auto-login only in development
-    if (import.meta.env.DEV) {
-      autoLogin();
-    }
+    // if (import.meta.env.DEV) {
+    //   autoLogin();
+    // }
   }, []);
 
   // Load users and roles data
@@ -193,46 +201,45 @@ export default function UserManagement() {
   const loadData = async () => {
     try {
       setLoading(true);
-      console.log("🔄 Loading users and roles data...");
+      console.log("🔄 Loading users, roles and permissions data...");
       
-      const [usersData, rolesData] = await Promise.all([
+      const [usersData, rolesData, permissionsData] = await Promise.all([
         usersService.getUsers(),
         rbacService.getRoles().catch(error => {
           console.error("🚫 Failed to load roles:", error);
-          // Return empty array as fallback
+          return [];
+        }),
+        rbacService.getPermissions().catch(error => {
+          console.error("🚫 Failed to load permissions:", error);
           return [];
         })
       ]);
       
       console.log("📊 Users data loaded:", usersData);
       console.log("📊 Roles data loaded:", rolesData);
-      console.log("🔧 Number of roles:", rolesData.length);
-      
-      // Log role selection status
-      if (rolesData.length === 0) {
-        console.log("⚠️ No RBAC roles loaded, using fallback roles");
-      } else {
-        console.log("✅ RBAC roles loaded successfully");
-      }
+      console.log("📊 Permissions data loaded:", permissionsData);
       
       setUsers(usersData.map(transformUser));
       setRoles(rolesData);
+      // Permissions not needed here anymore
       
       toast({
         title: "Data Loaded",
-        description: `Loaded ${usersData.length} users and ${rolesData.length} roles`,
+        description: `Loaded ${usersData.length} users`,
       });
     } catch (error) {
       console.error('❌ Error loading data:', error);
       toast({
         title: "Error",
-        description: `Failed to load users and roles: ${error.message || error}`,
+        description: `Failed to load data: ${error instanceof Error ? error.message : String(error)}`,
         variant: "destructive"
       });
     } finally {
       setLoading(false);
     }
   };
+
+  // --- User Management Functions ---
 
   const toggleUserStatus = async (userId: string) => {
     try {
@@ -270,13 +277,58 @@ export default function UserManagement() {
       email: user.email || '',
       firstName: user.firstName || '',
       lastName: user.lastName || '',
-      role: user.role || '',
-      isActive: user.isActive ?? true
+      role: user.roles && user.roles.length > 0 ? user.roles[0].id : '', // Use ID
+      isActive: user.isActive ?? true,
+      vicidialUserId: user.vicidialUserId || ''
     });
     setEditingUser(user);
     setShowEditDialog(true);
   };
 
+  const handleDeleteUser = async (user: User) => {
+    if (!confirm(`Are you sure you want to delete user ${user.name}?`)) return;
+
+    try {
+      await usersService.deleteUser(user.id);
+      toast({
+        title: "Success",
+        description: "User deleted successfully"
+      });
+      loadData();
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      
+      // Check if it's the specific "associated history" error
+      const errorMessage = error.response?.data?.message || error.message || "Unknown error";
+      
+      if (errorMessage.includes("associated history")) {
+        if (confirm(`${errorMessage}\n\nDo you want to FORCE DELETE this user? This will permanently remove all their calls, uploads, and history.`)) {
+          try {
+            await usersService.deleteUser(user.id, true);
+            toast({
+              title: "Success",
+              description: "User force deleted successfully"
+            });
+            loadData();
+            return;
+          } catch (forceError) {
+            console.error('Error force deleting user:', forceError);
+            toast({
+              title: "Error",
+              description: "Failed to force delete user",
+              variant: "destructive"
+            });
+          }
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive"
+        });
+      }
+    }
+  };
 
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -299,7 +351,7 @@ export default function UserManagement() {
       <div className="min-h-screen bg-background p-6 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent mx-auto mb-4"></div>
-          <p>Loading users...</p>
+          <p>Loading data...</p>
         </div>
       </div>
     );
@@ -307,287 +359,293 @@ export default function UserManagement() {
 
   return (
     <div className="min-h-screen bg-background p-6 space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="glass-card p-6 border-glass-border">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-3xl font-bold font-poppins text-foreground">
-              User Management
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Manage system users and access permissions
-            </p>
-          </div>
-          <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-            <DialogTrigger asChild>
-              <Button className="bg-gradient-accent hover:shadow-accent">
-                <Plus className="w-4 h-4 mr-2" />
-                Add User
-              </Button>
-            </DialogTrigger>
-            <CreateUserDialog 
-              roles={roles} 
-              onSuccess={loadData}
-              onClose={() => setShowCreateDialog(false)}
-            />
-          </Dialog>
+      <div className="space-y-6">
+          {/* Header */}
+          <div className="glass-card p-6 border-glass-border">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-xl font-semibold text-foreground">
+                  User Management
+                </h2>
+              </div>
+              <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+                <DialogTrigger asChild>
+                  <Button className="bg-gradient-accent hover:shadow-accent">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add User
+                  </Button>
+                </DialogTrigger>
+                <CreateUserDialog 
+                  roles={roles} 
+                  onSuccess={loadData}
+                  onClose={() => setShowCreateDialog(false)}
+                />
+              </Dialog>
 
-          {/* Edit User Dialog */}
-          <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-            <EditUserDialog 
-              user={editingUser}
-              roles={roles}
-              editUserData={editUserData}
-              setEditUserData={setEditUserData}
-              onSuccess={loadData}
-              onClose={() => setShowEditDialog(false)}
-            />
-          </Dialog>
-        </div>
-
-        {/* Search and Filters */}
-        <div className="flex items-center space-x-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <Input
-              placeholder="Search users..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="glass-light border-glass-border pl-10 focus:ring-accent focus:border-accent"
-            />
-          </div>
-          <select 
-            className="glass-light border-glass-border rounded-lg px-3 py-2 text-sm focus:ring-accent focus:border-accent"
-            value={selectedRole}
-            onChange={(e) => setSelectedRole(e.target.value)}
-          >
-            <option value="all">All Roles</option>
-            {roles.map(role => (
-              <option key={role.id} value={role.name}>
-                {role.name.charAt(0).toUpperCase() + role.name.slice(1)}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid gap-6 md:grid-cols-5">
-        <Card className="glass-card hover:shadow-accent transition-all duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Users
-            </CardTitle>
-            <Users className="h-4 w-4 text-accent" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono text-foreground">
-              {stats.totalUsers}
+              {/* Edit User Dialog */}
+              <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+                <EditUserDialog 
+                  user={editingUser}
+                  roles={roles}
+                  editUserData={editUserData}
+                  setEditUserData={setEditUserData}
+                  onSuccess={loadData}
+                  onClose={() => setShowEditDialog(false)}
+                />
+              </Dialog>
             </div>
-            <p className="text-xs text-muted-foreground">System users</p>
-          </CardContent>
-        </Card>
 
-        <Card className="glass-card hover:shadow-accent transition-all duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Active Users
-            </CardTitle>
-            <UserCheck className="h-4 w-4 text-success" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono text-success">
-              {stats.activeUsers}
-            </div>
-            <p className="text-xs text-muted-foreground">Currently active</p>
-          </CardContent>
-        </Card>
-
-        <Card className="glass-card hover:shadow-accent transition-all duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Admins
-            </CardTitle>
-            <Shield className="h-4 w-4 text-destructive" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono text-destructive">
-              {stats.admins}
-            </div>
-            <p className="text-xs text-muted-foreground">System administrators</p>
-          </CardContent>
-        </Card>
-
-        <Card className="glass-card hover:shadow-accent transition-all duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Managers
-            </CardTitle>
-            <Settings className="h-4 w-4 text-warning" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono text-warning">
-              {stats.managers}
-            </div>
-            <p className="text-xs text-muted-foreground">Team managers</p>
-          </CardContent>
-        </Card>
-
-        <Card className="glass-card hover:shadow-accent transition-all duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Agents
-            </CardTitle>
-            <Phone className="h-4 w-4 text-success" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono text-success">
-              {stats.agents}
-            </div>
-            <p className="text-xs text-muted-foreground">Call center agents</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Users Table */}
-      <Card className="glass-card">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Users className="w-5 h-5 text-accent" />
-            <span>System Users</span>
-          </CardTitle>
-          <CardDescription>
-            {filteredUsers.length} of {users.length} users shown
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-glass-border">
-                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">User</th>
-                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">Role</th>
-                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
-                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">Performance</th>
-                  <th className="text-left py-3 px-4 font-medium text-muted-foreground">Last Login</th>
-                  <th className="text-right py-3 px-4 font-medium text-muted-foreground">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.map((user, index) => (
-                  <tr 
-                    key={user.id}
-                    className="border-b border-glass-border/50 hover:bg-glass-light/30 transition-colors"
-                    style={{ animationDelay: `${index * 0.1}s` }}
-                  >
-                    <td className="py-4 px-4">
-                      <div className="flex items-center space-x-3">
-                        <Avatar className="h-10 w-10">
-                          <AvatarImage src={user.avatar} alt={user.name} />
-                          <AvatarFallback className="bg-gradient-accent text-accent-foreground font-semibold">
-                            {user.name.split(' ').map(n => n[0]).join('')}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <div className="font-medium text-foreground">{user.name}</div>
-                          <div className="text-sm text-muted-foreground flex items-center">
-                            <Mail className="w-3 h-3 mr-1" />
-                            {user.email}
-                          </div>
-                          <div className="text-xs text-muted-foreground font-mono">{user.id}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="flex flex-wrap gap-1">
-                        {user.roles && user.roles.length > 0 ? (
-                          user.roles.map(role => (
-                            <Badge key={role.id} className={getRoleColor([role])}>
-                              <Shield className="w-3 h-3 mr-1" />
-                              {role.name.charAt(0).toUpperCase() + role.name.slice(1)}
-                            </Badge>
-                          ))
-                        ) : (
-                          <Badge className={getRoleColor()}>
-                            <Shield className="w-3 h-3 mr-1" />
-                            No Role
-                          </Badge>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <Badge className={getStatusColor(user.status)}>
-                        {getStatusIcon(user.status)}
-                        <span className="ml-1">{user.status.charAt(0).toUpperCase() + user.status.slice(1)}</span>
-                      </Badge>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="text-sm">
-                        <div className="font-mono font-bold text-foreground">
-                          {user.callsToday} calls today
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {user.totalCalls.toLocaleString()} total calls
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="text-sm">
-                        <div className="font-mono text-foreground">{user.lastLogin}</div>
-                        <div className="text-xs text-muted-foreground">
-                          Joined: {user.joinDate}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4 text-right">
-                      <div className="flex items-center justify-end space-x-2">
-                        <Switch
-                          checked={user.status === "active"}
-                          onCheckedChange={() => toggleUserStatus(user.id)}
-                          className="data-[state=checked]:bg-accent"
-                        />
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="glass-light border-glass-border"
-                          onClick={() => handleEditUser(user)}
-                        >
-                          <Edit className="w-3 h-3" />
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="glass-light border-glass-border text-destructive hover:bg-destructive/10"
-                          disabled={user.roles?.some(role => role.name.toLowerCase().includes("admin")) || false}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {filteredUsers.length === 0 && (
-            <div className="text-center py-12">
-              <Users className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">No Users Found</h3>
-              <p className="text-muted-foreground mb-4">
-                No users match your current search and filter criteria.
-              </p>
-              <Button 
-                className="bg-gradient-accent hover:shadow-accent"
-                onClick={() => setShowCreateDialog(true)}
+            {/* Search and Filters */}
+            <div className="flex items-center space-x-4">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                <Input
+                  placeholder="Search users..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="glass-light border-glass-border pl-10 focus:ring-accent focus:border-accent"
+                />
+              </div>
+              <select 
+                className="glass-light border-glass-border rounded-lg px-3 py-2 text-sm focus:ring-accent focus:border-accent"
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value)}
               >
-                <Plus className="w-4 h-4 mr-2" />
-                Add New User
-              </Button>
+                <option value="all">All Roles</option>
+                {roles.map(role => (
+                  <option key={role.id} value={role.name}>
+                    {role.name.charAt(0).toUpperCase() + role.name.slice(1)}
+                  </option>
+                ))}
+              </select>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+
+          {/* Stats Cards */}
+          <div className="grid gap-6 md:grid-cols-5">
+            <Card className="glass-card hover:shadow-accent transition-all duration-300">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Total Users
+                </CardTitle>
+                <Users className="h-4 w-4 text-accent" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold font-mono text-foreground">
+                  {stats.totalUsers}
+                </div>
+                <p className="text-xs text-muted-foreground">System users</p>
+              </CardContent>
+            </Card>
+
+            <Card className="glass-card hover:shadow-accent transition-all duration-300">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Active Users
+                </CardTitle>
+                <UserCheck className="h-4 w-4 text-success" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold font-mono text-success">
+                  {stats.activeUsers}
+                </div>
+                <p className="text-xs text-muted-foreground">Currently active</p>
+              </CardContent>
+            </Card>
+
+            <Card className="glass-card hover:shadow-accent transition-all duration-300">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Admins
+                </CardTitle>
+                <Shield className="h-4 w-4 text-destructive" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold font-mono text-destructive">
+                  {stats.admins}
+                </div>
+                <p className="text-xs text-muted-foreground">System administrators</p>
+              </CardContent>
+            </Card>
+
+            <Card className="glass-card hover:shadow-accent transition-all duration-300">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Managers
+                </CardTitle>
+                <Settings className="h-4 w-4 text-warning" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold font-mono text-warning">
+                  {stats.managers}
+                </div>
+                <p className="text-xs text-muted-foreground">Team managers</p>
+              </CardContent>
+            </Card>
+
+            <Card className="glass-card hover:shadow-accent transition-all duration-300">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Agents
+                </CardTitle>
+                <Phone className="h-4 w-4 text-success" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold font-mono text-success">
+                  {stats.agents}
+                </div>
+                <p className="text-xs text-muted-foreground">Call center agents</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Users Table */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Users className="w-5 h-5 text-accent" />
+                <span>System Users</span>
+              </CardTitle>
+              <CardDescription>
+                {filteredUsers.length} of {users.length} users shown
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-glass-border">
+                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">User</th>
+                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Role</th>
+                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
+                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Performance</th>
+                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Last Login</th>
+                      <th className="text-right py-3 px-4 font-medium text-muted-foreground">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredUsers.map((user, index) => (
+                      <tr 
+                        key={user.id}
+                        className="border-b border-glass-border/50 hover:bg-glass-light/30 transition-colors"
+                        style={{ animationDelay: `${index * 0.1}s` }}
+                      >
+                        <td className="py-4 px-4">
+                          <div className="flex items-center space-x-3">
+                            <Avatar className="h-10 w-10">
+                              <AvatarImage src={user.avatar} alt={user.name} />
+                              <AvatarFallback className="bg-gradient-accent text-accent-foreground font-semibold">
+                                {user.name?.split(' ').map(n => n[0]).join('')}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <div className="font-medium text-foreground">{user.name}</div>
+                              <div className="text-sm text-muted-foreground flex items-center">
+                                <Mail className="w-3 h-3 mr-1" />
+                                {user.email}
+                              </div>
+                              <div className="text-xs text-muted-foreground font-mono">{user.id}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="flex flex-wrap gap-1">
+                            {user.roles && user.roles.length > 0 ? (
+                              user.roles.map(role => (
+                                <Badge key={role.id} className={getRoleColor([role])}>
+                                  <Shield className="w-3 h-3 mr-1" />
+                                  {role.name.charAt(0).toUpperCase() + role.name.slice(1)}
+                                </Badge>
+                              ))
+                            ) : (
+                              <Badge className={getRoleColor()}>
+                                <Shield className="w-3 h-3 mr-1" />
+                                No Role
+                              </Badge>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-4 px-4">
+                          <Badge className={getStatusColor(user.status)}>
+                            {getStatusIcon(user.status)}
+                            <span className="ml-1">{user.status?.charAt(0).toUpperCase() + user.status?.slice(1)}</span>
+                          </Badge>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="text-sm">
+                            <div className="font-mono font-bold text-foreground">
+                              {user.callsToday} calls today
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {user.totalCalls?.toLocaleString()} total calls
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="text-sm">
+                            <div className="font-mono text-foreground">{user.lastLogin}</div>
+                            <div className="text-xs text-muted-foreground">
+                              Joined: {user.joinDate}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          <div className="flex items-center justify-end space-x-2">
+                            <Switch
+                              checked={user.status === "active"}
+                              onCheckedChange={() => toggleUserStatus(user.id)}
+                              className="data-[state=checked]:bg-accent"
+                            />
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="glass-light border-glass-border"
+                              onClick={() => handleEditUser(user)}
+                            >
+                              <Edit className="w-3 h-3" />
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="glass-light border-glass-border text-destructive hover:bg-destructive/10"
+                              disabled={user.roles?.some(role => role.name.toLowerCase().includes("admin")) || false}
+                              onClick={() => handleDeleteUser(user)}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {filteredUsers.length === 0 && (
+                <div className="text-center py-12">
+                  <Users className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">No Users Found</h3>
+                  <p className="text-muted-foreground mb-4">
+                    No users match your current search and filter criteria.
+                  </p>
+                  <Button 
+                    className="bg-gradient-accent hover:shadow-accent"
+                    onClick={() => setShowCreateDialog(true)}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add New User
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+      </div>
+
+
+
+
+
+
     </div>
   )
 }
@@ -614,7 +672,7 @@ function CreateUserDialog({ roles, onSuccess, onClose }: CreateUserDialogProps) 
   // Get default role from available roles - prefer AGENT, or use first available
   const getDefaultRole = () => {
     const agentRole = availableRoles.find(r => r.name === 'AGENT');
-    return agentRole ? agentRole.name : (availableRoles.length > 0 ? availableRoles[0].name : 'AGENT');
+    return agentRole ? agentRole.id : (availableRoles.length > 0 ? availableRoles[0].id : '');
   };
 
   const [formData, setFormData] = useState<CreateUserFormData>({
@@ -642,35 +700,18 @@ function CreateUserDialog({ roles, onSuccess, onClose }: CreateUserDialogProps) 
     try {
       console.log('🔧 Creating user with data:', formData);
       
-      // Get the stored token
-      const token = localStorage.getItem('dial_craft_token');
-      console.log('🔧 Using token:', token ? 'Token present' : 'No token');
+      const selectedRole = availableRoles.find(r => r.id === formData.role);
 
-      // Direct fetch for better error handling
-      const response = await fetch('/api/users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(formData)
+      await usersService.createUser({
+        email: formData.email,
+        password: formData.password,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        roleIds: [formData.role],
+        role: selectedRole?.name?.toUpperCase(),
+        isActive: formData.isActive,
+        vicidialUserId: formData.vicidialUserId
       });
-
-      console.log('🔧 Create user response status:', response.status);
-      console.log('🔧 Create user response headers:', Object.fromEntries(response.headers.entries()));
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('🚫 User creation failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          errorBody: errorText
-        });
-        throw new Error(`User creation failed: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const newUser = await response.json();
-      console.log('✅ User created successfully:', newUser);
 
       toast({
         title: "Success",
@@ -685,7 +726,8 @@ function CreateUserDialog({ roles, onSuccess, onClose }: CreateUserDialogProps) 
         firstName: '',
         lastName: '',
         role: getDefaultRole(),
-        isActive: true
+        isActive: true,
+        vicidialUserId: ''
       });
     } catch (error) {
       console.error('🚫 Error creating user:', error);
@@ -753,6 +795,19 @@ function CreateUserDialog({ roles, onSuccess, onClose }: CreateUserDialogProps) 
         </div>
 
         <div>
+          <Label htmlFor="vicidialUserId">VICIdial User ID</Label>
+          <Input
+            id="vicidialUserId"
+            value={formData.vicidialUserId || ''}
+            onChange={(e) => setFormData(prev => ({ ...prev, vicidialUserId: e.target.value }))}
+            placeholder="e.g. agent001"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Required for predictive dialing integration.
+          </p>
+        </div>
+
+        <div>
           <Label>Role</Label>
           <Select
             value={formData.role}
@@ -763,7 +818,7 @@ function CreateUserDialog({ roles, onSuccess, onClose }: CreateUserDialogProps) 
             </SelectTrigger>
             <SelectContent>
               {availableRoles.map(role => (
-                <SelectItem key={role.id} value={role.name}>
+                <SelectItem key={role.id} value={role.id}>
                   {role.name} {role.description && `- ${role.description}`}
                 </SelectItem>
               ))}
@@ -822,16 +877,23 @@ function EditUserDialog({ user, roles, editUserData, setEditUserData, onSuccess,
     setIsSubmitting(true);
 
     try {
+      const selectedRole = roles.find(r => r.id === editUserData.role);
       const updateData = {
         email: editUserData.email,
         firstName: editUserData.firstName,
         lastName: editUserData.lastName,
-        role: editUserData.role,
-        isActive: editUserData.isActive
+        role: selectedRole?.name?.toUpperCase(),
+        isActive: editUserData.isActive,
+        vicidialUserId: editUserData.vicidialUserId
       };
 
       // Use the proper users service instead of manual fetch
       await usersService.updateUser(user.id, updateData);
+
+      // Update roles if role is selected
+      if (editUserData.role) {
+        await usersService.updateUserRoles(user.id, [editUserData.role]);
+      }
 
       toast({
         title: "Success",
@@ -892,6 +954,19 @@ function EditUserDialog({ user, roles, editUserData, setEditUserData, onSuccess,
         </div>
 
         <div>
+          <Label htmlFor="editVicidialUserId">VICIdial User ID</Label>
+          <Input
+            id="editVicidialUserId"
+            value={editUserData.vicidialUserId || ''}
+            onChange={(e) => setEditUserData(prev => ({ ...prev, vicidialUserId: e.target.value }))}
+            placeholder="e.g. agent001"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Required for predictive dialing integration.
+          </p>
+        </div>
+
+        <div>
           <Label htmlFor="editRole">Role</Label>
           <Select
             value={editUserData.role || ''}
@@ -902,7 +977,7 @@ function EditUserDialog({ user, roles, editUserData, setEditUserData, onSuccess,
             </SelectTrigger>
             <SelectContent>
               {roles.map((role) => (
-                <SelectItem key={role.id} value={role.name}>
+                <SelectItem key={role.id} value={role.id}>
                   {role.name}
                 </SelectItem>
               ))}
@@ -911,12 +986,10 @@ function EditUserDialog({ user, roles, editUserData, setEditUserData, onSuccess,
         </div>
 
         <div className="flex items-center space-x-2">
-          <input
-            type="checkbox"
+          <Checkbox
             id="editIsActive"
             checked={editUserData.isActive || false}
-            onChange={(e) => setEditUserData(prev => ({ ...prev, isActive: e.target.checked }))}
-            className="rounded border-gray-300"
+            onCheckedChange={(checked) => setEditUserData(prev => ({ ...prev, isActive: !!checked }))}
           />
           <Label htmlFor="editIsActive">User is active</Label>
         </div>

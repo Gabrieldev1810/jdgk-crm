@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CallDirection, CallStatus, CallDisposition } from './create-call.dto';
+import { CallDirection, CallStatus } from './create-call.dto';
 
 export class CallResponseDto {
   @ApiProperty()
@@ -29,8 +29,8 @@ export class CallResponseDto {
   @ApiProperty({ enum: CallStatus })
   status: CallStatus;
 
-  @ApiPropertyOptional({ enum: CallDisposition })
-  disposition?: CallDisposition;
+  @ApiPropertyOptional()
+  disposition?: string;
 
   @ApiPropertyOptional()
   notes?: string;

@@ -28,32 +28,30 @@ export class AuthService {
     private usersService: UsersService,
     private jwtService: JwtService,
     private configService: ConfigService,
-  ) {}
+  ) { }
 
   async validateUser(email: string, password: string): Promise<Omit<User, 'password'> | null> {
-    console.log(`🔍 Attempting to validate user: ${email}`);
-    const user = await this.usersService.findByEmail(email);
-    
+    // Normalize email to lowercase
+    const normalizedEmail = email.toLowerCase();
+    const user = await this.usersService.findByEmail(normalizedEmail);
+
     if (!user) {
-      console.log(`❌ User not found: ${email}`);
-      return null;
-    }
-    
-    if (!user.isActive) {
-      console.log(`❌ User is inactive: ${email}`);
-      return null;
-    }
-    
-    console.log(`✅ User found: ${email}, checking password...`);
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    console.log(`🔐 Password validation result: ${isPasswordValid}`);
-    
-    if (!isPasswordValid) {
-      console.log(`❌ Invalid password for user: ${email}`);
       return null;
     }
 
-    console.log(`✅ Authentication successful for user: ${email}`);
+    if (!user.isActive) {
+      return null;
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+
+    if (!isPasswordValid) {
+      // console.log(`❌ Invalid password for user: ${email}`);
+      return null;
+    }
+
+
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password: _, ...result } = user;
     return result;
@@ -144,7 +142,7 @@ export class AuthService {
 
   async validateJwtPayload(payload: JwtPayload): Promise<Omit<User, 'password'> | null> {
     const user = await this.usersService.findById(payload.sub);
-    
+
     if (!user || !user.isActive) {
       return null;
     }

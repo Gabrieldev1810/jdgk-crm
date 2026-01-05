@@ -1,0 +1,488 @@
+﻿import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { PermissionCacheService } from '../common/services/permission-cache.service';
+import { CreateUserDto, UpdateUserDto } from './dto/create-user.dto';
+import { User } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
+
+export type SafeUser = Omit<User, 'password'> & {
+  roles?: Array<{
+    id: string;
+    name: string;
+    description: string;
+    isActive: boolean;
+  }>;
+};
+
+@Injectable()
+export class UsersService {
+  constructor(
+    private prismaService: PrismaService,
+    private permissionCacheService: PermissionCacheService
+  ) {}
+
+  async findByEmail(email: string): Promise<User | null> {
+    return this.prismaService.user.findUnique({
+      where: { email },
+    });
+  }
+
+  async findById(id: string): Promise<User | null> {
+    return this.prismaService.user.findUnique({
+      where: { id },
+    });
+  }
+
+  async findAll(skip = 0, take = 50, currentUser?: User): Promise<SafeUser[]> {
+    const where: any = {};
+
+    if (currentUser) {
+      const hasViewAll = await this.permissionCacheService.hasPermission(currentUser.id, 'users.view_all');
+      const hasManage = await this.permissionCacheService.hasPermission(currentUser.id, 'users.manage');
+
+      if (!hasViewAll && !hasManage) {
+        const hasViewTeam = await this.permissionCacheService.hasPermission(currentUser.id, 'users.view_team');
+        
+        if (hasViewTeam) {
+          where.OR = [
+            { managerId: currentUser.id },
+            { id: currentUser.id }
+          ];
+        } else {
+          // Default: only see self
+          where.id = currentUser.id;
+        }
+      }
+    }
+
+    const users = await this.prismaService.user.findMany({
+      where,
+      skip: Number(skip) || 0,
+      take: Number(take) || 50,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        userRoles: {
+          where: { isActive: true },
+          include: {
+            role: true
+          }
+        }
+      }
+    });
+    
+    return users.map(user => {
+      const { password, userRoles, ...safeUser } = user as any;
+      return {
+        ...safeUser,
+        roles: userRoles?.map((ur: any) => ur.role) || []
+      };
+    }) as SafeUser[];
+  }
+
+  async assignManager(userId: string, managerId: string): Promise<SafeUser> {
+    const user = await this.prismaService.user.update({
+      where: { id: userId },
+      data: { managerId },
+    });
+    
+    const { password, ...safeUser } = user;
+    return safeUser as SafeUser;
+  }
+
+  async createUser(createUserDto: CreateUserDto, currentUser?: User): Promise<SafeUser> {
+    const { email, password, firstName, lastName, role, roleIds, vicidialUserId } = createUserDto;
+
+    // Enforce Manager restrictions
+    if (currentUser) {
+      const hasManage = await this.permissionCacheService.hasPermission(currentUser.id, 'users.manage');
+      if (!hasManage) {
+        const hasViewTeam = await this.permissionCacheService.hasPermission(currentUser.id, 'users.view_team');
+        if (hasViewTeam) {
+          if (role && role !== 'AGENT') {
+            throw new ForbiddenException('Managers can only create Agent users');
+          }
+        }
+      }
+    }
+
+    const existingUser = await this.findByEmail(email);
+    if (existingUser) {
+      throw new ConflictException('User with this email already exists');
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Prepare user data
+    const userData: any = {
+      email,
+      password: hashedPassword,
+      firstName,
+      lastName,
+      role: role || 'AGENT',
+      vicidialUserId,
+    };
+
+    // If created by a manager (who doesn't have full manage permission), automatically assign them as the manager
+    if (currentUser) {
+      const hasManage = await this.permissionCacheService.hasPermission(currentUser.id, 'users.manage');
+      if (!hasManage) {
+        const hasViewTeam = await this.permissionCacheService.hasPermission(currentUser.id, 'users.view_team');
+        if (hasViewTeam) {
+          userData.managerId = currentUser.id;
+          userData.role = 'AGENT';
+        }
+      }
+    }
+
+    // Create the user first
+    const user = await this.prismaService.user.create({
+      data: userData,
+    });
+
+    // 🔧 FIX: Assign roles based on roleIds if provided, otherwise fallback to legacy role
+    try {
+      if (roleIds && roleIds.length > 0) {
+        await this.updateUserRoles(user.id, roleIds, currentUser?.id);
+      } else {
+        await this.assignRbacRoleBasedOnLegacyRole(user.id, user.role);
+      }
+    } catch (error) {
+      console.warn(`Failed to assign RBAC role for user ${email}:`, error.message);
+      // Don't fail user creation if role assignment fails, but log it
+    }
+
+    const { password: _, ...safeUser } = user;
+    return safeUser as SafeUser;
+  }
+
+  /**
+   * Helper method to assign RBAC role based on legacy role field
+   */
+  private async assignRbacRoleBasedOnLegacyRole(userId: string, legacyRole: string): Promise<void> {
+    // Map legacy role names to RBAC role names
+    const roleMapping: { [key: string]: string } = {
+      'ADMIN': 'Administrator',
+      'admin': 'Administrator', 
+      'super admin': 'super admin',
+      'super_admin': 'super admin',
+      'SUPER_ADMIN': 'super admin',
+      'MANAGER': 'Manager',
+      'manager': 'Manager',
+      'AGENT': 'Agent',
+      'agent': 'Agent',
+      'SUPERVISOR': 'Supervisor',
+      'supervisor': 'Supervisor'
+    };
+
+    const targetRoleName = roleMapping[legacyRole] || 'Agent'; // Default to Agent if no match
+
+    // Find the RBAC role
+    const rbacRole = await this.prismaService.role.findFirst({
+      where: { 
+        name: { contains: targetRoleName }
+      }
+    });
+
+    if (!rbacRole) {
+      throw new Error(`RBAC role '${targetRoleName}' not found`);
+    }
+
+    // Assign the role to the user
+    await this.prismaService.userRole.create({
+      data: {
+        userId,
+        roleId: rbacRole.id,
+        isActive: true,
+        assignedById: userId // Self-assigned during creation
+      }
+    });
+
+    // Invalidate cache to ensure immediate permission availability
+    try {
+      await this.permissionCacheService.invalidateUserCache(
+        userId, 
+        'Auto-assigned during user creation'
+      );
+    } catch (error) {
+      console.warn('Failed to invalidate cache during user creation:', error.message);
+    }
+
+    console.log(`✅ Auto-assigned RBAC role '${rbacRole.name}' to user ${userId}`);
+  }
+
+  async updateUser(id: string, updateUserDto: UpdateUserDto): Promise<SafeUser> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const updateData: any = { ...updateUserDto };
+    
+    if (updateUserDto.password) {
+      updateData.password = await bcrypt.hash(updateUserDto.password, 12);
+      updateData.passwordChangedAt = new Date();
+    }
+
+    const updatedUser = await this.prismaService.user.update({
+      where: { id },
+      data: updateData,
+    });
+
+    const { password: _, ...safeUser } = updatedUser;
+    return safeUser as SafeUser;
+  }
+
+  async deleteUser(id: string, force: boolean = false): Promise<void> {
+    // Check for blocking relationships
+    const [callsCount, actionsCount, uploadsCount] = await Promise.all([
+      this.prismaService.call.count({ where: { agentId: id } }),
+      this.prismaService.accountAction.count({ where: { agentId: id } }),
+      this.prismaService.uploadBatch.count({ where: { uploadedById: id } })
+    ]);
+
+    if (!force && (callsCount > 0 || actionsCount > 0 || uploadsCount > 0)) {
+      throw new BadRequestException(
+        `User cannot be deleted because they have associated history (${callsCount} calls, ${actionsCount} actions, ${uploadsCount} uploads). Please deactivate the user instead.`
+      );
+    }
+
+    // If force delete is requested, delete the blocking records first
+    if (force) {
+      await this.prismaService.$transaction([
+        this.prismaService.call.deleteMany({ where: { agentId: id } }),
+        this.prismaService.accountAction.deleteMany({ where: { agentId: id } }),
+        this.prismaService.uploadBatch.deleteMany({ where: { uploadedById: id } })
+      ]);
+    }
+
+    // Clean up nullable references and delete
+    await this.prismaService.$transaction([
+      // Nullify references where the user is a manager/creator/actor
+      this.prismaService.user.updateMany({ where: { managerId: id }, data: { managerId: null } }),
+      this.prismaService.account.updateMany({ where: { assignedAgentId: id }, data: { assignedAgentId: null } }),
+      this.prismaService.task.updateMany({ where: { assignedToId: id }, data: { assignedToId: null } }),
+      this.prismaService.campaign.updateMany({ where: { managerId: id }, data: { managerId: null } }),
+      this.prismaService.auditLog.updateMany({ where: { actorId: id }, data: { actorId: null } }),
+      this.prismaService.role.updateMany({ where: { createdById: id }, data: { createdById: null } }),
+      this.prismaService.userRole.updateMany({ where: { assignedById: id }, data: { assignedById: null } }),
+      this.prismaService.rolePermission.updateMany({ where: { grantedById: id }, data: { grantedById: null } }),
+      this.prismaService.securityEvent.updateMany({ where: { userId: id }, data: { userId: null } }),
+      this.prismaService.securityEvent.updateMany({ where: { resolvedById: id }, data: { resolvedById: null } }),
+      
+      // Delete the user (cascading deletes will handle UserRole, UserSession, UserMFA, RefreshToken, PermissionContext)
+      this.prismaService.user.delete({
+        where: { id },
+      })
+    ]);
+  }
+
+  async updateLastLogin(id: string): Promise<void> {
+    await this.prismaService.user.update({
+      where: { id },
+      data: {
+        lastLogin: new Date(),
+      },
+    });
+  }
+
+  // RBAC User-Role Assignment Methods
+  async assignRoleToUser(userId: string, roleId: string, assignedById?: string): Promise<void> {
+    await this.prismaService.userRole.upsert({
+      where: {
+        userId_roleId: {
+          userId,
+          roleId
+        }
+      },
+      update: {
+        isActive: true,
+        assignedById
+      },
+      create: {
+        userId,
+        roleId,
+        assignedById,
+        isActive: true,
+      },
+    });
+  }
+
+  async removeRoleFromUser(userId: string, roleId: string): Promise<void> {
+    await this.prismaService.userRole.updateMany({
+      where: {
+        userId,
+        roleId,
+      },
+      data: {
+        isActive: false,
+      },
+    });
+  }
+
+  async getUserRoles(userId: string) {
+    const userRoles = await this.prismaService.userRole.findMany({
+      where: {
+        userId,
+        isActive: true,
+      },
+      include: {
+        role: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            isActive: true,
+          },
+        },
+      },
+    });
+
+    return userRoles.map(ur => ur.role);
+  }
+
+  async updateUserRoles(userId: string, roleIds: string[], assignedById?: string): Promise<void> {
+    // Deactivate all current roles
+    await this.prismaService.userRole.updateMany({
+      where: { userId },
+      data: { isActive: false },
+    });
+
+    // Assign new roles using upsert to handle existing records
+    for (const roleId of roleIds) {
+      await this.prismaService.userRole.upsert({
+        where: {
+          userId_roleId: {
+            userId,
+            roleId
+          }
+        },
+        update: {
+          isActive: true,
+          assignedById // Update who assigned it last
+        },
+        create: {
+          userId,
+          roleId,
+          assignedById,
+          isActive: true
+        }
+      });
+    }
+
+    // 🔧 FIX: Automatically invalidate permission cache when roles are updated
+    try {
+      await this.permissionCacheService.invalidateUserCache(
+        userId, 
+        'User roles updated via admin interface'
+      );
+    } catch (error) {
+      console.warn('Failed to invalidate permission cache for user:', userId, error);
+      // Don't throw error - role update should still succeed even if cache invalidation fails
+    }
+  }
+
+  async getUserPermissions(userId: string): Promise<Array<{
+    id: string;
+    code: string;
+    name: string;
+    description: string;
+    category: string;
+    resource: string;
+    action: string;
+  }>> {
+    try {
+      // Use Prisma's type-safe query methods instead of raw SQL
+      const userRoles = await this.prismaService.userRole.findMany({
+        where: {
+          userId: userId,
+          isActive: true,
+          role: {
+            isActive: true
+          }
+        },
+        include: {
+          role: {
+            include: {
+              permissions: {
+                include: {
+                  permission: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      // Extract permissions from the roles
+      const permissions = userRoles
+        .flatMap(userRole => 
+          userRole.role.permissions.map(rp => rp.permission)
+        )
+        // Remove duplicates
+        .filter((permission, index, array) => 
+          array.findIndex(p => p.id === permission.id) === index
+        )
+        .map(permission => ({
+          id: permission.id,
+          code: permission.code,
+          name: permission.name,
+          description: permission.description,
+          category: permission.category,
+          resource: permission.resource,
+          action: permission.action
+        }));
+
+      return permissions;
+    } catch (error) {
+      throw new Error(`Failed to get user permissions: ${error.message}`);
+    }
+  }
+
+  async getPerformance() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const agents = await this.prismaService.user.findMany({
+      where: { role: { in: ['AGENT', 'MANAGER'] } },
+      select: { id: true, firstName: true, lastName: true, email: true }
+    });
+
+    const performance = await Promise.all(agents.map(async (agent) => {
+      const [callsToday, totalCalls, collections, callStats, completedCalls] = await Promise.all([
+        this.prismaService.call.count({
+          where: { agentId: agent.id, startTime: { gte: today } }
+        }),
+        this.prismaService.call.count({
+          where: { agentId: agent.id }
+        }),
+        this.prismaService.account.aggregate({
+          where: { assignedAgentId: agent.id },
+          _sum: { amountPaid: true }
+        }),
+        this.prismaService.call.aggregate({
+          where: { agentId: agent.id, duration: { not: null } },
+          _avg: { duration: true }
+        }),
+        this.prismaService.call.count({
+          where: { agentId: agent.id, status: 'COMPLETED' }
+        })
+      ]);
+
+      const contactRate = totalCalls > 0 ? (completedCalls / totalCalls) * 100 : 0;
+      const avgCallDuration = callStats._avg.duration || 0;
+
+      return {
+        id: agent.id,
+        name: `${agent.firstName} ${agent.lastName}`,
+        email: agent.email,
+        callsToday,
+        totalCalls,
+        collections: collections._sum.amountPaid || 0,
+        contactRate: Math.round(contactRate * 10) / 10,
+        avgCallDuration: Math.round(avgCallDuration)
+      };
+    }));
+
+    return performance.sort((a, b) => b.collections - a.collections);
+  }
+}

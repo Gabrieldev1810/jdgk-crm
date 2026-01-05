@@ -6,7 +6,6 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -30,6 +29,18 @@ model User {
   lastFailedLogin      DateTime?
   passwordChangedAt    DateTime        @default(now())
   mustChangePassword   Boolean         @default(false)
+  
+  // Profile Fields
+  department           String?
+  phoneNumber          String?
+  location             String?
+  employeeId           String?         @unique
+  
+  // Team Management
+  managerId            String?
+  manager              User?           @relation("UserManager", fields: [managerId], references: [id])
+  subordinates         User[]          @relation("UserManager")
+
   accountActions       AccountAction[]
   assignedAccounts     Account[]          @relation("AssignedAgent")
   calls                Call[]
@@ -52,7 +63,86 @@ model User {
   resolvedSecurityEvents SecurityEvent[] @relation("SecurityEventResolver")
   permissionContexts  PermissionContext[] @relation("UserPermissionContexts")
 
+  // Task Management
+  tasks               Task[]             @relation("AssignedTasks")
+  campaigns           Campaign[]         @relation("CampaignManager")
+
+  // Vicidial Integration
+  vicidialUserId      String?            @unique
+
   @@map("users")
+}
+
+model Campaign {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  color       String   @default("#3b82f6") // Default blue
+  status      String   @default("ACTIVE") // ACTIVE, INACTIVE, ARCHIVED
+  startDate   DateTime?
+  endDate     DateTime?
+  
+  // Vicidial Integration
+  vicidialCampaignId String? @unique
+
+  managerId   String?
+  manager     User?    @relation("CampaignManager", fields: [managerId], references: [id])
+  
+  tasks       Task[]
+  columns     KanbanColumn[]
+  accounts    Account[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("campaigns")
+}
+
+model KanbanColumn {
+  id          String   @id @default(uuid())
+  title       String
+  color       String?  @default("#e2e8f0")
+  order       Int      @default(0)
+  
+  campaignId  String?
+  campaign    Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  tasks       Task[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([campaignId])
+  @@map("kanban_columns")
+}
+
+model Task {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  status      String   @default("TODO") // TODO, IN_PROGRESS, REVIEW, DONE
+  priority    String   @default("MEDIUM") // LOW, MEDIUM, HIGH
+  position    Int      @default(0)
+  dueDate     DateTime?
+  
+  assignedToId String?
+  assignedTo   User?    @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  
+  campaignId   String?
+  campaign     Campaign? @relation(fields: [campaignId], references: [id])
+  
+  columnId     String?
+  column       KanbanColumn? @relation(fields: [columnId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Vicidial Integration
+  vicidialCallbackId Int?    @unique
+  vicidialLeadId     Int?
+
+  @@map("tasks")
+  @@index([vicidialLeadId])
 }
 
 model RefreshToken {
@@ -86,6 +176,7 @@ model Account {
   lastPaymentDate        DateTime?
   lastPaymentAmount      Float?
   status                 String          @default("NEW")
+  secondaryStatus        String?         // For system/dialer statuses (e.g. DROP, BUSY, CB)
   priority               String          @default("MEDIUM")
   assignedAgentId        String?
   assignedDate           DateTime?
@@ -104,16 +195,19 @@ model Account {
   notes                  String?
   source                 String?
   batchId                String?
+  campaignId             String?
   createdAt              DateTime        @default(now())
   updatedAt              DateTime        @updatedAt
   actions                AccountAction[]
   phoneNumbers           AccountPhone[]
   assignedAgent          User?           @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  campaign               Campaign?       @relation(fields: [campaignId], references: [id])
   calls                  Call[]
 
   @@index([accountNumber])
   @@index([status])
   @@index([assignedAgentId])
+  @@index([campaignId])
   @@index([lastContactDate])
   @@index([nextContactDate])
   @@map("accounts")
@@ -152,20 +246,46 @@ model Call {
   followUpDate    DateTime?
   amountPromised  Float?
   amountCollected Float?
-  recordingPath   String?
+  recordingPath   String?       // Legacy field, keeping for backward compatibility
   callerId        String?
   campaignId      String?
+  
+  // VICIdial Integration Fields
+  vicidialLeadId  Int?
+  vicidialCallId  String?
+  
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+  
   agent           User          @relation(fields: [agentId], references: [id])
   accountPhone    AccountPhone? @relation(fields: [accountPhoneId], references: [id])
   account         Account       @relation(fields: [accountId], references: [id])
+  recordings      CallRecording[]
 
   @@index([accountId])
   @@index([agentId])
   @@index([startTime])
   @@index([disposition])
+  @@index([vicidialLeadId])
   @@map("calls")
+}
+
+model CallRecording {
+  id          String   @id @default(uuid())
+  callId      String
+  filename    String
+  path        String
+  url         String?
+  duration    Int?
+  size        Int?
+  mimeType    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  call        Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([callId])
+  @@map("call_recordings")
 }
 
 model AccountAction {
@@ -204,15 +324,32 @@ model UploadBatch {
   updateExisting      Boolean   @default(false)
   processingStarted   DateTime?
   processingCompleted DateTime?
-  errorLog            String? // JSON string of errors
+  errorLog            String? // JSON string of errors (Legacy)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
+  
   uploadedBy          User      @relation(fields: [uploadedById], references: [id])
+  uploadErrors        UploadError[]
 
   @@index([status])
   @@index([uploadedById])
   @@index([createdAt])
   @@map("upload_batches")
+}
+
+model UploadError {
+  id            String      @id @default(uuid())
+  batchId       String
+  rowNumber     Int
+  columnName    String?
+  errorMessage  String
+  rawData       String?     // JSON string of the row data
+  createdAt     DateTime    @default(now())
+  
+  batch         UploadBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+  @@map("upload_errors")
 }
 
 // ================================
@@ -363,6 +500,11 @@ model Disposition {
   requiresPayment   Boolean             @default(false)
   requiresNotes     Boolean             @default(false)
   isSuccessful      Boolean             @default(false) // Indicates positive outcome
+  
+  // Automation fields
+  newAccountStatus  String?             // Status to apply to account when this disposition is selected
+  followUpDelay     Int?                // Minutes to delay follow-up (if requiresFollowUp is true)
+  
   sortOrder         Int                 @default(0)
   isActive          Boolean             @default(true)
   usageCount        Int                 @default(0) // Track how often used

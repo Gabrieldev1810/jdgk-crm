@@ -72,7 +72,8 @@ export class AuditLoggingService {
   async logRbacEvent(
     action: 'ROLE_CREATED' | 'ROLE_UPDATED' | 'ROLE_DELETED' | 'PERMISSION_CREATED' | 
            'PERMISSION_UPDATED' | 'PERMISSION_DELETED' | 'USER_ROLE_ASSIGNED' | 
-           'USER_ROLE_REVOKED' | 'ROLE_PERMISSION_GRANTED' | 'ROLE_PERMISSION_REVOKED',
+           'USER_ROLE_REVOKED' | 'ROLE_PERMISSION_GRANTED' | 'ROLE_PERMISSION_REVOKED' |
+           'USER_ROLES_UPDATED',
     actorUserId: string,
     targetResource: string,
     resourceId?: string,

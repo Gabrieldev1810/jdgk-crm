@@ -15,12 +15,8 @@ class ApiClient {
 
   constructor() {
     const apiUrl = getApiUrl();
-    console.log('🔧 API Client Configuration:', {
-      baseURL: apiUrl,
-      isDev: import.meta.env.DEV,
-      mode: import.meta.env.MODE
-    });
-    
+
+
     this.instance = axios.create({
       baseURL: apiUrl,
       timeout: config.api.timeout,
@@ -40,12 +36,15 @@ class ApiClient {
       (config) => {
         const token = this.getStoredToken();
         if (token) {
+
           config.headers.Authorization = `Bearer ${token}`;
+        } else {
+          console.warn('[API] No token found in storage during request interception!');
         }
-        
+
         // Add request ID for tracking
         config.headers['X-Request-ID'] = this.generateRequestId();
-        
+
         return config;
       },
       (error) => {
@@ -62,7 +61,9 @@ class ApiClient {
         const originalRequest = error.config as any;
 
         // Handle 401 Unauthorized - Token expired
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        const isAuthRequest = originalRequest.url?.includes('/auth/login') || originalRequest.url?.includes('/auth/refresh');
+
+        if (error.response?.status === 401 && !originalRequest._retry && !isAuthRequest) {
           if (this.isRefreshing) {
             // If already refreshing, queue the request
             return new Promise((resolve, reject) => {
@@ -107,7 +108,7 @@ class ApiClient {
         resolve(token);
       }
     });
-    
+
     this.failedQueue = [];
   }
 
@@ -122,12 +123,11 @@ class ApiClient {
   private async refreshToken(): Promise<string> {
     // Refresh token is handled via httpOnly cookie by backend
     try {
-      const response = await axios.post(getApiUrl('/auth/refresh'), {}, {
-        withCredentials: true // Include httpOnly cookies
-      });
+      // Use the instance to ensure base URL is correct
+      const response = await this.instance.post('/auth/refresh');
 
       const { accessToken } = response.data;
-      
+
       // Store new access token
       localStorage.setItem(config.auth.tokenKey, accessToken);
 
@@ -172,7 +172,20 @@ class ApiClient {
   }
 
   async post<T>(url: string, data?: any, config?: any): Promise<T> {
-    const response = await this.instance.post(url, data, config);
+    // Don't override Content-Type for FormData (multipart upload)
+    const axiosConfig = config || {};
+    if (data instanceof FormData) {
+      axiosConfig.headers = axiosConfig.headers || {};
+      // Let the browser set the Content-Type with the boundary
+      delete axiosConfig.headers['Content-Type'];
+      // Also ensure the instance default doesn't override it
+      axiosConfig.headers['Content-Type'] = undefined;
+    } else {
+      axiosConfig.headers = axiosConfig.headers || {};
+      axiosConfig.headers['Content-Type'] = 'application/json';
+    }
+
+    const response = await this.instance.post(url, data, axiosConfig);
     return response.data;
   }
 
@@ -247,7 +260,7 @@ export const api = {
   put: <T>(url: string, data?: any) => apiClient.put<T>(url, data),
   patch: <T>(url: string, data?: any) => apiClient.patch<T>(url, data),
   delete: <T>(url: string) => apiClient.delete<T>(url),
-  upload: <T>(url: string, file: File, onProgress?: (progress: number) => void) => 
+  upload: <T>(url: string, file: File, onProgress?: (progress: number) => void) =>
     apiClient.uploadFile<T>(url, file, onProgress),
 };
 

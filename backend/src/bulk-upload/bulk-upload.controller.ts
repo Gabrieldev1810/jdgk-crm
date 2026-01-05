@@ -14,6 +14,8 @@ import {
 import { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { BulkUploadService, BulkUploadOptions } from './bulk-upload.service';
 import * as multer from 'multer';
 
@@ -21,7 +23,7 @@ import * as multer from 'multer';
 // BULK UPLOAD CONTROLLER
 // ================================
 @Controller('bulk-upload')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class BulkUploadController {
   constructor(private readonly bulkUploadService: BulkUploadService) {}
 
@@ -29,6 +31,7 @@ export class BulkUploadController {
    * Upload and process CSV/Excel file for bulk account creation
    */
   @Post('upload')
+  @Roles('ADMIN', 'SUPER_ADMIN', 'MANAGER')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: multer.memoryStorage(),
@@ -90,6 +93,7 @@ export class BulkUploadController {
    * Get upload batch status
    */
   @Get('batch/:batchId')
+  @Roles('ADMIN', 'SUPER_ADMIN', 'MANAGER')
   async getBatchStatus(@Param('batchId') batchId: string) {
     try {
       const batch = await this.bulkUploadService.getBatchStatus(batchId);
@@ -110,6 +114,7 @@ export class BulkUploadController {
    * Get upload batch history
    */
   @Get('history')
+  @Roles('ADMIN', 'SUPER_ADMIN', 'MANAGER')
   async getBatchHistory(
     @Req() req: Request & { user: any },
     @Query('page', new ParseIntPipe({ optional: true })) page: number = 1,
@@ -142,53 +147,37 @@ export class BulkUploadController {
       message: 'CSV template structure',
       data: {
         requiredFields: [
-          'accountNumber',
-          'firstName', 
-          'lastName',
-          'originalAmount',
-          'currentBalance'
+          'Account Number',
+          'Name',
+          'Original Amount',
+          'Out Standing Balance (OSB)',
+          'Phone Numbers'
         ],
         optionalFields: [
-          'email',
-          'address1',
-          'address2', 
-          'city',
-          'state',
-          'zipCode',
-          'country',
-          'amountPaid',
-          'interestRate',
-          'lastPaymentDate',
-          'lastPaymentAmount',
-          'status',
-          'priority',
-          'preferredContactMethod',
-          'bestTimeToCall',
-          'timezone',
-          'language',
-          'daysPastDue',
-          'lastContactDate',
-          'nextContactDate',
-          'doNotCall',
-          'disputeFlag',
-          'bankruptcyFlag',
-          'deceasedFlag',
-          'notes',
-          'source'
+          'Email',
+          'Address',
+          'Bank Partner',
+          'Status',
+          'Assigned Agent',
+          'Last Contact',
+          'Remarks'
         ],
-        sampleCSV: `accountNumber,firstName,lastName,email,originalAmount,currentBalance,status,priority
-ACC001,John,Doe,john.doe@email.com,1000.00,850.00,ACTIVE,HIGH
-ACC002,Jane,Smith,jane.smith@email.com,2500.00,2200.00,NEW,MEDIUM`,
+        sampleCSV: `Account Number,Name,Email,Address,Original Amount,Out Standing Balance (OSB),Bank Partner,Status,Phone Numbers,Assigned Agent,Last Contact,Remarks
+ACC001,John Doe,john.doe@email.com,"123 Main St, New York, NY",1000.00,850.00,Chase,NEW,555-0101,,2023-01-01,Customer promised to pay
+ACC002,Jane Smith,jane.smith@email.com,"456 Oak Ave, Los Angeles, CA",2500.00,2200.00,Amex,NEW,555-0102,,2023-01-02,Call back later`,
         fieldDescriptions: {
-          accountNumber: 'Unique account identifier (required)',
-          firstName: 'Customer first name (required)',
-          lastName: 'Customer last name (required)',
-          originalAmount: 'Original debt amount (required, number)',
-          currentBalance: 'Current outstanding balance (required, number)',
-          status: 'Account status (NEW, ACTIVE, CLOSED, DISPUTED, PAID)',
-          priority: 'Collection priority (LOW, MEDIUM, HIGH, URGENT)',
-          email: 'Customer email address',
-          // ... other field descriptions
+          'Account Number': 'Unique account identifier (required)',
+          'Name': 'Customer full name (required)',
+          'Email': 'Customer email address',
+          'Address': 'Full address',
+          'Original Amount': 'Original debt amount (required, number)',
+          'Out Standing Balance (OSB)': 'Current outstanding balance (required, number)',
+          'Bank Partner': 'Source of the debt (e.g. Chase, Amex)',
+          'Status': 'Account status (Default: NEW)',
+          'Phone Numbers': 'Primary phone number (required)',
+          'Assigned Agent': 'Name or ID of assigned agent (optional)',
+          'Last Contact': 'Date of last contact (YYYY-MM-DD)',
+          'Remarks': 'Notes or comments'
         }
       }
     };

@@ -1,4 +1,4 @@
-import { Injectable, ExecutionContext } from '@nestjs/common';
+import { Injectable, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { SKIP_AUTH_KEY } from '../decorators/skip-auth.decorator';
@@ -18,5 +18,17 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       return true;
     }
     return super.canActivate(context);
+  }
+
+  handleRequest(err: any, user: any, info: any) {
+    if (err || !user) {
+      console.warn('[JwtAuthGuard] Authentication failed:', {
+        error: err?.message,
+        info: info?.message,
+        userPresent: !!user
+      });
+      throw err || new UnauthorizedException(info?.message || 'Unauthorized');
+    }
+    return user;
   }
 }

@@ -1,9 +1,10 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { reportsService, PerformanceData, AudienceData, ReportItem } from "@/services/reports"
 import { 
   BarChart3, 
   TrendingUp,
@@ -32,73 +33,13 @@ import {
   Tooltip
 } from 'recharts'
 
-// Mock data for charts
-const performanceData = [
-  { name: '3', callVolume: 145, collections: 38, contactRate: 72 },
-  { name: '6', callVolume: 152, collections: 42, contactRate: 68 },
-  { name: '9', callVolume: 148, collections: 45, contactRate: 75 },
-  { name: '12', callVolume: 161, collections: 52, contactRate: 78 },
-  { name: '15', callVolume: 155, collections: 48, contactRate: 82 },
-  { name: '18', callVolume: 167, collections: 55, contactRate: 85 },
-  { name: '21', callVolume: 163, collections: 58, contactRate: 88 },
-  { name: '24', callVolume: 171, collections: 62, contactRate: 92 },
-  { name: '27', callVolume: 168, collections: 59, contactRate: 89 },
-  { name: '30', callVolume: 174, collections: 65, contactRate: 95 }
-]
 
-const audienceData = [
-  { name: 'Current Accounts', value: 45, color: 'hsl(var(--primary))' },
-  { name: 'Overdue Accounts', value: 35, color: 'hsl(var(--accent))' },
-  { name: 'New Placements', value: 20, color: 'hsl(var(--primary-glow))' }
-]
 
-const sparklineData = {
-  callVolume: [142, 145, 148, 152, 149, 155, 158, 161, 159, 163, 167, 171, 168, 174],
-  collections: [38, 42, 39, 45, 48, 44, 52, 49, 55, 58, 62, 59, 65],
-  contactRate: [72, 68, 75, 78, 82, 79, 85, 88, 92, 89, 95, 91]
-}
 
-const recentReports = [
-  {
-    id: "RPT-001",
-    title: "Daily Collections Report",
-    description: "Comprehensive daily collection performance analysis",
-    audienceReached: "1,250",
-    roi: "12.3%",
-    ctr: "68.5%",
-    cpl: "$47,832",
-    budget: "Target: $50k",
-    manager: "Sarah Johnson",
-    avatar: "SJ",
-    status: "completed"
-  },
-  {
-    id: "RPT-002", 
-    title: "Agent Performance Report",
-    description: "Individual agent call metrics and success rates",
-    audienceReached: "892",
-    roi: "15.7%",
-    ctr: "72.1%",
-    cpl: "$32,140",
-    budget: "Target: $35k",
-    manager: "Mike Chen",
-    avatar: "MC",
-    status: "active"
-  },
-  {
-    id: "RPT-003",
-    title: "Account Status Analysis", 
-    description: "Portfolio overview with aging and disposition tracking",
-    audienceReached: "2,150",
-    roi: "8.9%",
-    ctr: "61.2%",
-    cpl: "$28,750",
-    budget: "Target: $30k",
-    manager: "Lisa Torres",
-    avatar: "LT",
-    status: "completed"
-  }
-]
+
+
+
+
 
 // Sparkline component
 const Sparkline = ({ data, color = "hsl(var(--primary))" }: { data: number[], color?: string }) => (
@@ -116,37 +57,75 @@ const Sparkline = ({ data, color = "hsl(var(--primary))" }: { data: number[], co
   </ResponsiveContainer>
 )
 
-const performanceMetrics = [
-  { 
-    label: "Daily Call Volume", 
-    value: "1,245", 
-    change: "+18%", 
-    positive: true,
-    subtitle: "from last 30 days",
-    sparkline: sparklineData.callVolume,
-    color: "hsl(var(--success))"
-  },
-  { 
-    label: "Collections Today", 
-    value: "$47,832", 
-    change: "-8%", 
-    positive: false,
-    subtitle: "from last 30 days",
-    sparkline: sparklineData.collections,
-    color: "hsl(var(--destructive))"
-  },
-  { 
-    label: "Contact Rate", 
-    value: "68.5%", 
-    change: "+12%", 
-    positive: true,
-    subtitle: "from last 30 days",
-    sparkline: sparklineData.contactRate,
-    color: "hsl(var(--success))"
-  }
-]
-
 export default function Reports() {
+  const [performanceData, setPerformanceData] = useState<PerformanceData[]>([])
+  const [audienceData, setAudienceData] = useState<AudienceData[]>([])
+  const [recentReports, setRecentReports] = useState<ReportItem[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [perf, aud, recent] = await Promise.all([
+          reportsService.getPerformance(),
+          reportsService.getAudience(),
+          reportsService.getRecentReports()
+        ])
+        setPerformanceData(perf)
+        setAudienceData(aud)
+        setRecentReports(recent)
+      } catch (error) {
+        console.error("Failed to fetch reports data", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchData()
+  }, [])
+
+  // Calculate sparkline data from performance data
+  const sparklineData = {
+    callVolume: performanceData.map(d => d.callVolume),
+    collections: performanceData.map(d => d.collections),
+    contactRate: performanceData.map(d => d.contactRate)
+  }
+
+  const totalCalls = performanceData.reduce((acc, curr) => acc + curr.callVolume, 0)
+  const totalCollections = performanceData.reduce((acc, curr) => acc + curr.collections, 0)
+  const avgContactRate = performanceData.length > 0 
+    ? Math.round(performanceData.reduce((acc, curr) => acc + curr.contactRate, 0) / performanceData.length) 
+    : 0
+
+  const performanceMetrics = [
+    { 
+      label: "Total Call Volume", 
+      value: totalCalls.toLocaleString(), 
+      change: "+18%", 
+      positive: true,
+      subtitle: "last 30 days",
+      sparkline: sparklineData.callVolume,
+      color: "hsl(var(--success))"
+    },
+    { 
+      label: "Total Collections", 
+      value: `$${totalCollections.toLocaleString()}`, 
+      change: "-8%", 
+      positive: false,
+      subtitle: "last 30 days",
+      sparkline: sparklineData.collections,
+      color: "hsl(var(--destructive))"
+    },
+    { 
+      label: "Avg Contact Rate", 
+      value: `${avgContactRate}%`, 
+      change: "+12%", 
+      positive: true,
+      subtitle: "last 30 days",
+      sparkline: sparklineData.contactRate,
+      color: "hsl(var(--success))"
+    }
+  ]
+
   const [selectedChannel, setSelectedChannel] = useState<string>("all")
   const [selectedGoals, setSelectedGoals] = useState<string>("all")
   const [dateRange, setDateRange] = useState<string>("last-30-days")

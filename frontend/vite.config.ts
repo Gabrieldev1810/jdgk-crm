@@ -11,12 +11,12 @@ export default defineConfig(({ mode }) => ({
     proxy: {
       // Proxy API calls to backend during development
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
         secure: false,
-        rewrite: (path) => path,
+        rewrite: (path) => path.replace(/^\/api/, ''),
         configure: (proxy, options) => {
-          console.log('🔧 Vite Proxy configured for /api -> http://localhost:3000');
+          console.log('🔧 Vite Proxy configured for /api -> http://127.0.0.1:3000');
         }
       },
     },

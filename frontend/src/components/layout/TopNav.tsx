@@ -1,14 +1,16 @@
-import { useState } from "react"
-import { 
-  Search, 
-  Bell, 
-  User, 
-  Moon, 
-  Sun, 
-  LogOut, 
+import { useState, useEffect } from "react"
+import {
+  Search,
+  Bell,
+  User,
+  Moon,
+  Sun,
+  LogOut,
   Settings,
   Shield,
-  Menu
+  Menu,
+  Phone,
+  PauseCircle
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,19 +26,67 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { useTheme } from "@/components/ui/theme-provider"
+import { vicidialService } from "@/services/vicidial"
+import { toast } from "sonner" // Assuming sonner is used, or use standard alert/console for now if not sure
 
 interface TopNavProps {
   userEmail?: string
   userRole?: string
+  user?: any // Using any to avoid importing full type, or import User type
   onLogout: () => void
 }
 
-export function TopNav({ userEmail = "agent@bank.com", userRole = "agent", onLogout }: TopNavProps) {
+export function TopNav({ userEmail = "agent@bank.com", userRole = "agent", user, onLogout }: TopNavProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const { theme, setTheme } = useTheme()
 
+  // Agent Status State
+  const [isPaused, setIsPaused] = useState(true) // Default to Paused for safety
+  const [isLoading, setIsLoading] = useState(false)
+
+  // Initial Status Check (Optional: Could poll or fetch once)
+  useEffect(() => {
+    // For now, we default to Paused. 
+    // Real implementation would fetch status from backend if available.
+  }, [])
+
+  const handleStatusToggle = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+
+    const newStatus = !isPaused; // Toggle
+    const action = newStatus ? 'PAUSE' : 'RESUME';
+
+    // FIX: Use actual VICIdial User ID from user object, not email
+    const agentId = user?.vicidialUserId;
+
+    if (!agentId) {
+      toast.error("Error: No VICIdial Agent ID assigned to this user.");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const result = await vicidialService.updateAgentStatus(agentId, newStatus) as any;
+
+      if (result && (result.success || result.message?.includes('SUCCESS'))) {
+        setIsPaused(newStatus);
+        // toast.success(`Agent ${action}D Successfully`);
+      } else {
+        console.error('Status update failed', result);
+        // toast.error(`Failed to ${action} agent`);
+      }
+    } catch (error) {
+      console.error('Error updating status:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   const getRoleBadgeVariant = (role: string) => {
-    switch (role) {
+    const roleLower = role.toLowerCase()
+    switch (roleLower) {
+      case "super_admin": return "default"
       case "admin": return "default"
       case "manager": return "secondary"
       case "agent": return "outline"
@@ -45,9 +95,11 @@ export function TopNav({ userEmail = "agent@bank.com", userRole = "agent", onLog
   }
 
   const getRoleColor = (role: string) => {
-    switch (role) {
+    const roleLower = role.toLowerCase()
+    switch (roleLower) {
+      case "super_admin": return "text-purple-600"
       case "admin": return "text-destructive"
-      case "manager": return "text-warning"  
+      case "manager": return "text-warning"
       case "agent": return "text-success"
       default: return "text-muted-foreground"
     }
@@ -60,7 +112,7 @@ export function TopNav({ userEmail = "agent@bank.com", userRole = "agent", onLog
       {/* Left Section */}
       <div className="flex items-center space-x-2 sm:space-x-4">
         <SidebarTrigger className="hover:bg-glass-light p-2 rounded-lg transition-colors" />
-        
+
         {/* Global Search */}
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
@@ -75,6 +127,28 @@ export function TopNav({ userEmail = "agent@bank.com", userRole = "agent", onLog
 
       {/* Right Section */}
       <div className="flex items-center space-x-2 sm:space-x-4">
+
+        {/* AGENT STATUS TOGGLE */}
+        {userRole.toLowerCase() === 'agent' && (
+          <div className="flex items-center mr-2">
+            <Button
+              variant={isPaused ? "outline" : "default"}
+              size="sm"
+              onClick={handleStatusToggle}
+              disabled={isLoading}
+              className={`${isPaused ? 'border-yellow-500 text-yellow-600 hover:bg-yellow-50' : 'bg-green-600 hover:bg-green-700 text-white'} transition-all duration-300 min-w-[140px] font-semibold`}
+            >
+              {isLoading ? (
+                <span className="flex items-center gap-2">Updating...</span>
+              ) : isPaused ? (
+                <span className="flex items-center gap-2"><PauseCircle className="w-4 h-4" /> PAUSED</span>
+              ) : (
+                <span className="flex items-center gap-2"><Phone className="w-4 h-4" /> DIALING</span>
+              )}
+            </Button>
+          </div>
+        )}
+
         {/* Mobile Search Button */}
         <Button
           variant="ghost"
@@ -150,7 +224,7 @@ export function TopNav({ userEmail = "agent@bank.com", userRole = "agent", onLog
               <span>Settings</span>
             </DropdownMenuItem>
             {/* Theme toggle for mobile */}
-            <DropdownMenuItem 
+            <DropdownMenuItem
               className="hover:bg-glass-light cursor-pointer sm:hidden"
               onClick={() => setTheme(theme === "light" ? "dark" : "light")}
             >
@@ -167,7 +241,7 @@ export function TopNav({ userEmail = "agent@bank.com", userRole = "agent", onLog
               )}
             </DropdownMenuItem>
             <DropdownMenuSeparator className="bg-glass-border" />
-            <DropdownMenuItem 
+            <DropdownMenuItem
               className="hover:bg-destructive/10 text-destructive cursor-pointer"
               onClick={onLogout}
             >

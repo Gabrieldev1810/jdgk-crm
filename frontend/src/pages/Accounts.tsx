@@ -2,28 +2,34 @@ import { useState, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Account as ApiAccount, AccountSearchParams, AccountStatistics, CreateAccountRequest, AccountPriority } from "@/types/api"
 import { accountService } from "@/services/accounts"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { vicidialService, VicidialCampaign, RealtimeReport } from "@/services/vicidial"
+import { usersService, User } from "@/services/users"
+import { auth } from "@/services/auth"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { 
-  Upload, 
-  Download, 
-  Plus, 
-  Users, 
-  DollarSign, 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator } from "@/components/ui/select"
+import {
+  Upload,
+  Download,
+  Plus,
+  Users,
+  DollarSign,
   AlertTriangle,
   Phone,
   MoreHorizontal,
-  FileText
+  FileText,
+  RefreshCw
 } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { CallHistoryModal } from "../components/CallHistoryModal"
+import { useToast } from "@/hooks/use-toast"
+import { dispositionsService, Disposition } from "@/services/dispositions"
 
 // Legacy interface for backward compatibility - maps to new API Account type
 interface Account {
@@ -32,34 +38,69 @@ interface Account {
   name: string
   phoneNumbers: string[]
   email?: string
+  address?: string
+  originalAmount?: number
   balance: number
   dueDate: string
   bankPartner: string
   status: "untouched" | "touched" | "ptp" | "collected" | "not_collected"
+  secondaryStatus?: string
   agent: string
   lastContact?: string
   remarks?: string
   createdAt: string
   updatedAt: string
+  assignedDate?: string
 }
 
 // Helper function to convert API Account to legacy Account interface
-const convertApiAccountToLegacy = (apiAccount: ApiAccount): Account => ({
-  id: apiAccount.id,
-  accountId: apiAccount.accountNumber,
-  name: apiAccount.fullName,
-  phoneNumbers: [], // Will be populated from phoneNumbers relation
-  email: apiAccount.email,
-  balance: apiAccount.currentBalance,
-  dueDate: apiAccount.createdAt, // Placeholder - adjust as needed
-  bankPartner: "Bank", // Placeholder - adjust as needed
-  status: apiAccount.status.toLowerCase() as any, // Map API status to legacy
-  agent: apiAccount.assignedAgent?.firstName + " " + apiAccount.assignedAgent?.lastName || "Unassigned",
-  lastContact: apiAccount.lastContactDate,
-  remarks: apiAccount.notes,
-  createdAt: apiAccount.createdAt,
-  updatedAt: apiAccount.updatedAt
-})
+const convertApiAccountToLegacy = (apiAccount: ApiAccount): Account => {
+  // Map API status to legacy status safely
+  let status: Account["status"] = "untouched";
+  if (apiAccount.status) {
+    const s = apiAccount.status.toUpperCase();
+    switch (s) {
+      case 'NEW': status = 'untouched'; break;
+      case 'ACTIVE': status = 'touched'; break;
+      case 'PTP': status = 'ptp'; break;
+      case 'PAID': status = 'collected'; break;
+      case 'SKIP': status = 'not_collected'; break;
+      default: status = 'untouched';
+    }
+  }
+
+  // Construct full address
+  const addressParts = [
+    apiAccount.address1,
+    apiAccount.address2,
+    apiAccount.city,
+    apiAccount.state,
+    apiAccount.zipCode,
+    apiAccount.country
+  ].filter(Boolean);
+  const fullAddress = addressParts.length > 0 ? addressParts.join(", ") : undefined;
+
+  return {
+    id: apiAccount.id,
+    accountId: apiAccount.accountNumber,
+    name: apiAccount.fullName || "Unknown Name",
+    phoneNumbers: apiAccount.phoneNumbers?.map(p => p.phoneNumber) || [],
+    email: apiAccount.email,
+    address: fullAddress,
+    originalAmount: apiAccount.originalAmount,
+    balance: apiAccount.currentBalance || 0,
+    dueDate: apiAccount.createdAt, // Placeholder - adjust as needed
+    bankPartner: apiAccount.source || "Unknown Bank",
+    status: status,
+    secondaryStatus: apiAccount.secondaryStatus,
+    agent: apiAccount.assignedAgent ? (apiAccount.assignedAgent.firstName + " " + apiAccount.assignedAgent.lastName) : "Unassigned",
+    assignedDate: apiAccount.assignedDate,
+    lastContact: apiAccount.lastContactDate,
+    remarks: apiAccount.notes,
+    createdAt: apiAccount.createdAt,
+    updatedAt: apiAccount.updatedAt
+  };
+}
 
 // Removed mock data - all data should come from API
 
@@ -92,12 +133,32 @@ function formatCurrency(amount: number) {
   }).format(amount)
 }
 
+import { useAgentStatus } from "@/hooks/useAgentStatus"
+import { CurrentCallCard } from "@/components/vicidial/CurrentCallCard"
+
 export default function Accounts() {
-  const [searchParams] = useSearchParams()
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Use shared agent status hook
+  const {
+    status: agentStatus,
+    callInfo,
+    activeAccount: activeCallAccount,
+    accountLoading: activeCallLoading,
+    updateStatus: updateAgentStatus
+  } = useAgentStatus()
+
   const [accounts, setAccounts] = useState<Account[]>([])
   const [searchQuery, setSearchQuery] = useState("")
-  const [selectedBank, setSelectedBank] = useState("all")
+  const [campaigns, setCampaigns] = useState<VicidialCampaign[]>([])
+  const [agents, setAgents] = useState<User[]>([])
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>("all")
+  const [selectedAgentId, setSelectedAgentId] = useState<string>("all")
+  const [selectedStatus, setSelectedStatus] = useState<string>("all")
+  const [sortBy, setSortBy] = useState<string>("createdAt_desc")
   const [filteredAccounts, setFilteredAccounts] = useState<Account[]>([])
+  const [newStatus, setNewStatus] = useState<string>("")
+  const [statusNotes, setStatusNotes] = useState<string>("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [uploadMode, setUploadMode] = useState<"single" | "bulk">("single")
   const [loading, setLoading] = useState(true)
@@ -110,12 +171,100 @@ export default function Accounts() {
   const [showUpdateStatus, setShowUpdateStatus] = useState(false)
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [showBulkUpload, setShowBulkUpload] = useState(false)
+  const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null)
+  const [bulkUploadCampaignId, setBulkUploadCampaignId] = useState<string>("")
+  const [isBulkUploading, setIsBulkUploading] = useState(false)
+  const [bulkUploadProgress, setBulkUploadProgress] = useState(0)
+  const [bulkUploadOptions, setBulkUploadOptions] = useState({
+    skipErrors: false,
+    updateExisting: false
+  })
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 10,
+    limit: 50,
     total: 0,
     totalPages: 0
   })
+  const [dispositions, setDispositions] = useState<Disposition[]>([])
+  const { toast } = useToast()
+  const [activeLivePhones, setActiveLivePhones] = useState<Set<string>>(new Set())
+  const [pinnedAccounts, setPinnedAccounts] = useState<Account[]>([]) // Store accounts fetched specifically for pinning
+  const user = auth.getUser()
+  const isManagerOrAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'SUPER_ADMIN'
+
+  // Poll for real-time status to pin active calls
+  useEffect(() => {
+    const pollRealtime = async () => {
+      try {
+        const report = await vicidialService.getRealtimeReport();
+        // Collect all phone numbers that are currently INCALL, LIVE, etc.
+        const livePhones = new Set<string>();
+
+        // Checks agents in call
+        report.agents?.forEach(agent => {
+          if (['INCALL', 'LIVE', 'XFER'].includes(agent.status)) {
+            // We might need to find the phone number from the agent's channel or lead
+          }
+        });
+
+        // report.calls gives us the live calls directly
+        report.calls?.forEach(call => {
+          if (call.phone_number) livePhones.add(call.phone_number);
+        });
+
+        setActiveLivePhones(livePhones);
+
+        // Role-Based Injection: If Admin/Manager, check for "off-list" active calls and fetch them
+        if (isManagerOrAdmin && livePhones.size > 0) {
+          // Identify numbers that are NOT in the current accounts list
+          const existingPhones = new Set<string>();
+          accounts.forEach(acc => acc.phoneNumbers.forEach(p => existingPhones.add(p)));
+
+          const missingPhones = Array.from(livePhones).filter(p => !existingPhones.has(p));
+
+          if (missingPhones.length > 0) {
+            try {
+              // Fetch the missing accounts to inject them
+              const accountsResponse = await accountService.getAccounts({
+                phoneNumbers: missingPhones,
+                limit: missingPhones.length
+              });
+
+              if (accountsResponse.data && accountsResponse.data.length > 0) {
+                // Convert to legacy and set pinned state
+                const newPinned = accountsResponse.data.map(convertApiAccountToLegacy);
+
+                // Avoid infinite re-renders or duplicates if we already have them pin-cached
+                // For simplicity, just update the state. The merge logic below handles display.
+                setPinnedAccounts(prev => {
+                  // Only update if different to avoid excess re-renders? 
+                  // Actually, simpler to just set it, React will diff.
+                  return newPinned;
+                });
+              }
+            } catch (fetchErr) {
+              console.error("Failed to fetch active injection accounts", fetchErr);
+            }
+          } else {
+            // If all active phones are already in list, clear pinned accounts to keep clean?
+            // Or keep them? If they are in `accounts`, we don't need them in `pinnedAccounts`.
+            setPinnedAccounts([]);
+          }
+        } else {
+          setPinnedAccounts([]);
+        }
+
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    pollRealtime();
+    const interval = setInterval(pollRealtime, 5000);
+    return () => clearInterval(interval);
+  }, [accounts, isManagerOrAdmin]); // Added dependency on accounts to know what's missing
+
   // Function to generate auto account number
   const generateAccountNumber = () => {
     const currentYear = new Date().getFullYear()
@@ -159,20 +308,75 @@ export default function Accounts() {
     }
   }, [isDialogOpen])
 
-  // Bank partners list
-  const bankPartners = [
-    { value: "all", label: "All Banks" },
-    { value: "Rcbc", label: "RCBC" },
-    { value: "Fundline", label: "Fundline" },
-    { value: "Amg", label: "AMG" },
-    { value: "Simbayanan", label: "Simbayanan" },
-    { value: "Flexi", label: "Flexi" },
-    { value: "Tfs", label: "TFS" },
-    { value: "JACCS", label: "JACCS" },
-    { value: "Radiowealth", label: "Radiowealth" },
-    { value: "Ctbc", label: "CTBC" },
-    { value: "Ewb", label: "EWB" },
-    { value: "Bdo", label: "BDO" }
+  // Handle Screen Pop (Deep Linking)
+  useEffect(() => {
+    const handleScreenPop = async () => {
+      const mode = searchParams.get('mode');
+      const accountId = searchParams.get('accountId');
+
+      if (mode === 'view' && accountId) {
+        // Fetch specific account if not in current list
+        try {
+          // We can reuse getAccount logic or just fetch detail
+          // For now, simpler to rely on loadAccounts filtering if ID is in list, 
+          // but robust way is to fetch specific account.
+          // Let's check if it's already in 'accounts' state first
+          const existing = accounts.find(a => a.id === accountId);
+          if (existing) {
+            handleViewDetails(existing);
+          } else {
+            // Need to fetch it individually or search for it
+            const response = await accountService.getAccounts({ search: accountId, limit: 1 });
+            if (response.data && response.data.length > 0) {
+              const foundAccount = convertApiAccountToLegacy(response.data[0]);
+              handleViewDetails(foundAccount);
+            }
+          }
+        } catch (err) {
+          console.error("Screen Pop Error: Failed to load account", err);
+        }
+      } else if (mode === 'create') {
+        const phone = searchParams.get('phone');
+        const accountNumber = searchParams.get('accountNumber');
+        const campaignId = searchParams.get('campaignId');
+
+        setIsDialogOpen(true);
+        setSingleForm(prev => ({
+          ...prev,
+          phoneNumber1: phone || prev.phoneNumber1,
+          accountNumber: accountNumber || generateAccountNumber(), // Use provided ID or generate new
+          notes: campaignId ? `Lead from Campaign: ${campaignId}` : prev.notes
+        }));
+      }
+    };
+
+    // Small delay to ensure initial load doesn't conflict
+    const timer = setTimeout(() => {
+      handleScreenPop();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchParams, accounts]); // Depend on accounts to ensure list is loaded (though we fetch if missing)
+
+
+  // Sort options
+  const sortOptions = [
+    { value: "createdAt_desc", label: "Date (Newest)" },
+    { value: "createdAt_asc", label: "Date (Oldest)" },
+    { value: "lastName_asc", label: "Name (A-Z)" },
+    { value: "lastName_desc", label: "Name (Z-A)" },
+    { value: "status_asc", label: "Status (A-Z)" },
+    { value: "status_desc", label: "Status (Z-A)" },
+  ]
+
+  // Status options
+  const statusOptions = [
+    { value: "all", label: "All Statuses" },
+    { value: "NEW", label: "New" },
+    { value: "ACTIVE", label: "Active" },
+    { value: "PTP", label: "PTP" },
+    { value: "PAID", label: "Paid" },
+    { value: "SKIP", label: "Skip" },
   ]
 
   // Load accounts from API
@@ -180,14 +384,21 @@ export default function Accounts() {
     try {
       setLoading(true)
       setError(null)
-      
+
+      const [sortField, sortOrder] = sortBy.split('_')
+
       const response = await accountService.getAccounts({
         page: pagination.page,
         limit: pagination.limit,
         search: searchQuery || undefined,
+        campaignId: selectedCampaignId !== "all" ? selectedCampaignId : undefined,
+        agentId: selectedAgentId !== "all" ? selectedAgentId : undefined,
+        status: selectedStatus !== "all" ? selectedStatus as any : undefined,
+        sortBy: sortField as any,
+        sortOrder: sortOrder as any,
         ...params
       })
-      
+
       const legacyAccounts = response.data.map(convertApiAccountToLegacy)
       setAccounts(legacyAccounts)
       setPagination(response.pagination)
@@ -203,28 +414,60 @@ export default function Accounts() {
   // Load statistics from API
   const loadStatistics = async () => {
     try {
-      const stats = await accountService.getStatistics()
+      const params: AccountSearchParams = {
+        campaignId: selectedCampaignId !== "all" ? selectedCampaignId : undefined,
+        agentId: selectedAgentId !== "all" ? selectedAgentId : undefined,
+        status: selectedStatus !== "all" ? selectedStatus as any : undefined,
+      }
+      const stats = await accountService.getStatistics(params)
       setStatistics(stats)
     } catch (err) {
       console.error('Failed to load statistics:', err)
     }
   }
 
+  // Fetch campaigns and agents
+  useEffect(() => {
+    const fetchCampaigns = async () => {
+      try {
+        const data = await vicidialService.getCampaigns()
+        setCampaigns(data)
+      } catch (error) {
+        console.error("Failed to fetch campaigns", error)
+      }
+    }
+
+    const fetchAgents = async () => {
+      try {
+        const data = await usersService.getUsers(0, 1000)
+        // Filter only agents if needed, but for now show all users
+        setAgents(data)
+      } catch (error) {
+        console.error("Failed to fetch agents", error)
+      }
+    }
+
+    fetchCampaigns()
+    fetchAgents()
+  }, [])
+
+  // Export accounts to CSV
+
   // Export accounts to CSV
   const handleExport = async () => {
     try {
       setIsExporting(true)
       setError(null)
-      
+
       // Use current search and filter parameters for export
       const params: AccountSearchParams = {}
       if (searchQuery) {
         params.search = searchQuery
       }
       // Note: bankPartner filter is handled at the frontend level, not in the API
-      
+
       const response = await accountService.exportAccounts(params)
-      
+
       // Create and download the CSV file
       const blob = new Blob([response.data], { type: response.contentType })
       const url = window.URL.createObjectURL(blob)
@@ -235,7 +478,7 @@ export default function Accounts() {
       link.click()
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
-      
+
     } catch (err) {
       console.error('Failed to export accounts:', err)
       setError('Failed to export accounts. Please try again.')
@@ -244,53 +487,117 @@ export default function Accounts() {
     }
   }
 
-  // Initialize bank filter from URL params
-  useEffect(() => {
-    const bankParam = searchParams.get('bank')
-    if (bankParam) {
-      const bank = bankPartners.find(b => b.value.toLowerCase() === bankParam.toLowerCase())
-      if (bank) {
-        setSelectedBank(bank.value)
-      }
+  const handleSyncVicidial = async () => {
+    try {
+      setLoading(true)
+      const result = await accountService.syncVicidialLeads(selectedCampaignId)
+      alert(`Synced ${result.created + result.updated} leads from Vicidial.`)
+      loadAccounts()
+    } catch (error) {
+      console.error("Failed to sync Vicidial leads:", error)
+      alert("Failed to sync Vicidial leads. Please check the console for details.")
+    } finally {
+      setLoading(false)
     }
-  }, [searchParams])
+  }
 
-  // Load initial data
+  const loadDispositions = async () => {
+    try {
+      const data = await dispositionsService.getDispositions(true)
+      setDispositions(data)
+    } catch (error) {
+      console.error("Failed to load dispositions", error)
+    }
+  }
+
+  // Initialize
   useEffect(() => {
     loadAccounts()
     loadStatistics()
+    loadDispositions()
   }, [])
 
   // Reload accounts when search or pagination changes
   useEffect(() => {
     const delayedSearch = setTimeout(() => {
       loadAccounts()
+      loadStatistics()
     }, 300) // Debounce search
 
     return () => clearTimeout(delayedSearch)
-  }, [searchQuery, pagination.page])
+  }, [searchQuery, pagination.page, selectedCampaignId, selectedAgentId, selectedStatus, sortBy])
 
-  // Filter accounts by search query and selected bank (local filtering for now)
+  // Filter accounts by search query and Sort by Active Status
   useEffect(() => {
-    let filtered = accounts
+    // 0. Merge regular accounts with pinned accounts (deduplicating by ID)
+    const allAccountsMap = new Map<string, Account>();
 
-    // Apply bank filter
-    if (selectedBank !== "all") {
-      filtered = filtered.filter(account => account.bankPartner === selectedBank)
-    }
+    // First add regular accounts
+    accounts.forEach(acc => allAccountsMap.set(acc.id, acc));
 
-    // Apply search filter
+    // Then add/overwrite with pinned accounts (ensure they exist in the set)
+    // Actually, pinnedAccounts are for "Off-List" injection.
+    // If an account is in both, we use the `accounts` version usually, but pinned one is fresh. 
+    // Let's prioritize existing list to avoid UI jumpiness if data differs slightly, 
+    // unless it's purely missing.
+    pinnedAccounts.forEach(acc => {
+      if (!allAccountsMap.has(acc.id)) {
+        allAccountsMap.set(acc.id, acc);
+      }
+    });
+
+    let result = Array.from(allAccountsMap.values());
+
+    // 1. Filter by Search (Frontend filter if search query is present but not handled by API reload)
+    // Actually, `loadAccounts` is triggered by `searchQuery`, so backend handles primary search.
+    // But `pinnedAccounts` might need filtering if they don't match query?
+    // User requested "Inject ANY active call", so pinned accounts should probably stay visible even if they match query or not?
+    // "Pin Active Calls" implies visibility. Let's keep them unless explicitly filtered out?
+    // Standard behavior: Pinned items usually bypass filters or we just let them be subject to same filters.
+    // Given "Inject" requirement, let's keep them subject to SEARCH but maybe ignore status filters?
+    // For now, let's apply frontend filtering to the merged list to be safe.
+
     if (searchQuery) {
-      filtered = filtered.filter(account =>
-        account.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        account.accountId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        account.phoneNumbers.some(phone => phone.includes(searchQuery)) ||
-        account.bankPartner.toLowerCase().includes(searchQuery.toLowerCase())
+      const lowerQuery = searchQuery.toLowerCase()
+      result = result.filter(account =>
+        account.name.toLowerCase().includes(lowerQuery) ||
+        account.accountId.toLowerCase().includes(lowerQuery) ||
+        account.phoneNumbers?.some(p => p.includes(lowerQuery)) ||
+        account.email?.toLowerCase().includes(lowerQuery)
       )
     }
 
-    setFilteredAccounts(filtered)
-  }, [accounts, searchQuery, selectedBank])
+    // 4. Sort
+    result.sort((a, b) => {
+      // Primary Sort: Active Calls (Pin to Top)
+      const aIsActive = a.phoneNumbers.some(p => activeLivePhones.has(p));
+      const bIsActive = b.phoneNumbers.some(p => activeLivePhones.has(p));
+      if (aIsActive && !bIsActive) return -1;
+      if (!aIsActive && bIsActive) return 1;
+
+      // Secondary Sort: Selected Sort Option
+      switch (sortBy) {
+        case "currentBalance_desc": // Amount High to Low
+          return b.balance - a.balance;
+        case "currentBalance_asc": // Amount Low to High
+          return a.balance - b.balance;
+        case "accountNumber_asc": // Account ID A-Z
+          return a.accountId.localeCompare(b.accountId);
+        case "accountNumber_desc": // Account ID Z-A
+          return b.accountId.localeCompare(a.accountId);
+        case "firstName_asc":
+          return a.name.localeCompare(b.name)
+        case "createdAt_desc":
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        case "updatedAt_desc":
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        default:
+          return 0
+      }
+    })
+
+    setFilteredAccounts(result)
+  }, [accounts, pinnedAccounts, activeLivePhones, sortBy, searchQuery])
 
   const handleSearch = (query: string) => {
     setSearchQuery(query)
@@ -329,11 +636,16 @@ export default function Accounts() {
       if (singleForm.phoneNumber2) phoneNumbers.push({ phoneNumber: singleForm.phoneNumber2, phoneType: 'SECONDARY' })
       if (singleForm.phoneNumber3) phoneNumbers.push({ phoneNumber: singleForm.phoneNumber3, phoneType: 'ALTERNATE' })
 
-      // Create account via API (phone numbers will be handled separately for now)
+      // Add phone numbers to account data
+      if (phoneNumbers.length > 0) {
+        accountData.phoneNumbers = phoneNumbers;
+      }
+
+      // Create account via API
       const newAccount = await accountService.createAccount(accountData)
 
       console.log('Account created successfully:', newAccount)
-      
+
       // Close dialog and reset form
       setIsDialogOpen(false)
       setSingleForm({
@@ -365,10 +677,10 @@ export default function Accounts() {
 
       // Reload accounts to show the new one
       loadAccounts()
-      
+
       // Show success message
       alert('Account added successfully!')
-      
+
     } catch (error) {
       console.error('Failed to create account:', error)
       alert('Failed to create account. Please check the console for details.')
@@ -418,8 +730,35 @@ export default function Accounts() {
     setShowCallHistory(true)
   }
 
+  const handleManualCall = async (account: Account) => {
+    try {
+      // Get current user
+      const currentUser = await auth.getCurrentUser()
+      if (!currentUser) {
+        throw new Error('User not authenticated')
+      }
+
+      // Get the primary phone number
+      const phoneNumber = account.phoneNumbers[0]
+      if (!phoneNumber) {
+        throw new Error('No phone number available for this account')
+      }
+
+      // Initiate the call
+      await vicidialService.dial(phoneNumber, currentUser.email, account.id)
+
+      // Show success toast
+      alert(`Calling ${phoneNumber}...`)
+    } catch (error: any) {
+      console.error('Failed to initiate call:', error)
+      alert(`Failed to initiate call: ${error.message || 'Unknown error'}`)
+    }
+  }
+
   const handleUpdateStatus = (account: Account) => {
     setSelectedAccount(account)
+    setNewStatus(account.status)
+    setStatusNotes("")
     setShowUpdateStatus(true)
   }
 
@@ -430,7 +769,7 @@ export default function Accounts() {
 
   const confirmRemoveAccount = async () => {
     if (!selectedAccount) return
-    
+
     try {
       await accountService.deleteAccount(selectedAccount.id)
       setShowRemoveConfirm(false)
@@ -457,8 +796,17 @@ export default function Accounts() {
             </p>
           </div>
           <div className="flex space-x-4">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
+              className="glass-light border-glass-border"
+              onClick={handleSyncVicidial}
+              disabled={loading}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Sync Vicidial
+            </Button>
+            <Button
+              variant="outline"
               className="glass-light border-glass-border"
               onClick={handleExport}
               disabled={isExporting}
@@ -466,6 +814,227 @@ export default function Accounts() {
               <Download className="w-4 h-4 mr-2" />
               {isExporting ? 'Exporting...' : 'Export'}
             </Button>
+            <Dialog open={showBulkUpload} onOpenChange={setShowBulkUpload}>
+              <DialogTrigger asChild>
+                <Button className="bg-gradient-accent hover:shadow-accent">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Bulk Upload
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="glass-dialog border-glass-border max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Bulk Upload Accounts</DialogTitle>
+                  <DialogDescription>
+                    Upload multiple accounts at once using CSV or Excel file (up to 10MB)
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-6 py-4">
+                  {/* File Upload Area */}
+                  <div
+                    className="border-2 border-dashed border-glass-border rounded-lg p-8 text-center hover:border-accent hover:bg-accent/5 transition-all cursor-pointer group"
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      e.currentTarget.classList.add('border-accent', 'bg-accent/5')
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('border-accent', 'bg-accent/5')
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      e.currentTarget.classList.remove('border-accent', 'bg-accent/5')
+                      const files = e.dataTransfer.files
+                      if (files.length > 0) {
+                        const file = files[0]
+                        if (file.name.endsWith('.csv') || file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                          setBulkUploadFile(file)
+                        } else {
+                          alert('Please upload a CSV or Excel file')
+                        }
+                      }
+                    }}
+                    onClick={() => document.getElementById('bulk-file-input')?.click()}
+                  >
+                    <input
+                      id="bulk-file-input"
+                      type="file"
+                      accept=".csv,.xlsx,.xls"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.length) {
+                          setBulkUploadFile(e.target.files[0])
+                        }
+                      }}
+                    />
+                    <Upload className="w-12 h-12 text-muted-foreground group-hover:text-accent mx-auto mb-2 transition-colors" />
+                    {bulkUploadFile ? (
+                      <div>
+                        <p className="font-semibold text-foreground">{bulkUploadFile.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {(bulkUploadFile.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="font-semibold text-foreground">Click to upload or drag and drop</p>
+                        <p className="text-sm text-muted-foreground">CSV or Excel files up to 10MB</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Campaign Selection */}
+                  <div className="space-y-2">
+                    <Label htmlFor="bulk-campaign">Campaign (Optional)</Label>
+                    <Select value={bulkUploadCampaignId || "none"} onValueChange={(value) => setBulkUploadCampaignId(value === "none" ? "" : value)}>
+                      <SelectTrigger className="glass-light border-glass-border">
+                        <SelectValue placeholder="Select a campaign" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No Campaign</SelectItem>
+                        {campaigns.map((campaign) => (
+                          <SelectItem key={campaign.campaign_id} value={campaign.campaign_id}>
+                            {campaign.campaign_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Upload Options */}
+                  <div className="space-y-3">
+                    <Label>Upload Options</Label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="skip-errors"
+                        checked={bulkUploadOptions.skipErrors}
+                        onChange={(e) =>
+                          setBulkUploadOptions((prev) => ({
+                            ...prev,
+                            skipErrors: e.target.checked
+                          }))
+                        }
+                        className="w-4 h-4 rounded border-glass-border"
+                      />
+                      <Label htmlFor="skip-errors" className="text-sm font-normal cursor-pointer">
+                        Skip rows with errors (continue with valid rows)
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="update-existing"
+                        checked={bulkUploadOptions.updateExisting}
+                        onChange={(e) =>
+                          setBulkUploadOptions((prev) => ({
+                            ...prev,
+                            updateExisting: e.target.checked
+                          }))
+                        }
+                        className="w-4 h-4 rounded border-glass-border"
+                      />
+                      <Label htmlFor="update-existing" className="text-sm font-normal cursor-pointer">
+                        Update existing accounts (if account number already exists)
+                      </Label>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
+                  {isBulkUploading && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Uploading...</span>
+                        <span className="text-foreground font-semibold">{bulkUploadProgress}%</span>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-gradient-accent h-full transition-all duration-300"
+                          style={{ width: `${bulkUploadProgress}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowBulkUpload(false)
+                      setBulkUploadFile(null)
+                      setBulkUploadCampaignId("")
+                      setBulkUploadProgress(0)
+                    }}
+                    disabled={isBulkUploading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="bg-gradient-accent hover:shadow-accent"
+                    onClick={async () => {
+                      if (!bulkUploadFile) {
+                        alert("Please select a file to upload")
+                        return
+                      }
+
+                      setIsBulkUploading(true)
+                      setBulkUploadProgress(0)
+
+                      try {
+                        const interval = setInterval(() => {
+                          setBulkUploadProgress((prev) => {
+                            if (prev >= 90) return 90
+                            return prev + 10
+                          })
+                        }, 500)
+
+                        const response = await accountService.bulkUpload({
+                          file: bulkUploadFile,
+                          campaignId: bulkUploadCampaignId || undefined,
+                          skipDuplicates: bulkUploadOptions.skipErrors,
+                          updateExisting: bulkUploadOptions.updateExisting
+                        })
+
+                        clearInterval(interval)
+                        setBulkUploadProgress(100)
+
+                        const result = response.data || (response as any)
+
+                        if (response.success && result) {
+                          let message = ""
+                          if (result.failedRecords > 0) {
+                            message = `Upload completed with ${result.successfulRecords} successful records and ${result.failedRecords} errors.`
+                          } else {
+                            message = `Upload successful! ${result.successfulRecords} records imported.`
+                          }
+                          alert(message)
+
+                          // Reset form and close dialog
+                          setShowBulkUpload(false)
+                          setBulkUploadFile(null)
+                          setBulkUploadCampaignId("")
+                          setBulkUploadProgress(0)
+                          setBulkUploadOptions({ skipErrors: false, updateExisting: false })
+
+                          // Reload accounts
+                          loadAccounts()
+                        } else {
+                          alert(response.message || "Upload failed")
+                        }
+                      } catch (error) {
+                        console.error("Upload error:", error)
+                        alert(`Upload failed: ${error.message || "Unknown error"}`)
+                      } finally {
+                        setIsBulkUploading(false)
+                      }
+                    }}
+                    disabled={!bulkUploadFile || isBulkUploading}
+                  >
+                    {isBulkUploading ? "Uploading..." : "Upload"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="bg-gradient-accent hover:shadow-accent">
@@ -480,7 +1049,7 @@ export default function Accounts() {
                     Add a new customer account using JDGK CRM format
                   </DialogDescription>
                 </DialogHeader>
-                
+
                 <div className="space-y-4 py-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -521,7 +1090,7 @@ export default function Accounts() {
                       </Select>
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="firstName">First Name</Label>
@@ -529,8 +1098,8 @@ export default function Accounts() {
                         id="firstName"
                         placeholder="Juan"
                         value={singleForm.firstName}
-                        onChange={(e) => setSingleForm(prev => ({ 
-                          ...prev, 
+                        onChange={(e) => setSingleForm(prev => ({
+                          ...prev,
                           firstName: e.target.value,
                           fullName: `${e.target.value} ${prev.lastName}`.trim()
                         }))}
@@ -543,8 +1112,8 @@ export default function Accounts() {
                         id="lastName"
                         placeholder="Dela Cruz"
                         value={singleForm.lastName}
-                        onChange={(e) => setSingleForm(prev => ({ 
-                          ...prev, 
+                        onChange={(e) => setSingleForm(prev => ({
+                          ...prev,
                           lastName: e.target.value,
                           fullName: `${prev.firstName} ${e.target.value}`.trim()
                         }))}
@@ -563,7 +1132,7 @@ export default function Accounts() {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="address1">Address Line 1</Label>
@@ -586,7 +1155,7 @@ export default function Accounts() {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="city">City</Label>
@@ -619,7 +1188,7 @@ export default function Accounts() {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="originalAmount">Original Amount</Label>
@@ -642,7 +1211,7 @@ export default function Accounts() {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="phoneNumber1">Phone Number 1</Label>
@@ -675,7 +1244,7 @@ export default function Accounts() {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="status">Status</Label>
@@ -724,7 +1293,7 @@ export default function Accounts() {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="notes">Notes/Remarks</Label>
                     <Textarea
@@ -736,7 +1305,7 @@ export default function Accounts() {
                     />
                   </div>
                 </div>
-                
+
                 <DialogFooter>
                   <Button variant="outline" onClick={() => {
                     setIsDialogOpen(false)
@@ -798,16 +1367,31 @@ export default function Accounts() {
                         <p className="text-sm text-muted-foreground">{selectedAccount.name}</p>
                       </div>
                     </div>
+
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <Label className="text-sm font-semibold">Email</Label>
                         <p className="text-sm text-muted-foreground">{selectedAccount.email || 'N/A'}</p>
                       </div>
                       <div>
-                        <Label className="text-sm font-semibold">Balance</Label>
+                        <Label className="text-sm font-semibold">Address</Label>
+                        <p className="text-sm text-muted-foreground">{selectedAccount.address || 'N/A'}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-sm font-semibold">Original Amount</Label>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedAccount.originalAmount ? `₱${selectedAccount.originalAmount.toLocaleString()}` : 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <Label className="text-sm font-semibold">Out Standing Balance (OSB)</Label>
                         <p className="text-sm text-muted-foreground">₱{selectedAccount.balance.toLocaleString()}</p>
                       </div>
                     </div>
+
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <Label className="text-sm font-semibold">Bank Partner</Label>
@@ -815,32 +1399,46 @@ export default function Accounts() {
                       </div>
                       <div>
                         <Label className="text-sm font-semibold">Status</Label>
-                        <Badge variant={selectedAccount.status === 'collected' ? 'default' : 'secondary'}>
-                          {selectedAccount.status.toUpperCase()}
-                        </Badge>
+                        <div className="flex gap-2">
+                          <Badge variant={selectedAccount.status === 'collected' ? 'default' : 'secondary'}>
+                            {selectedAccount.status.toUpperCase()}
+                          </Badge>
+                          {selectedAccount.secondaryStatus && (
+                            <Badge variant="outline">{selectedAccount.secondaryStatus}</Badge>
+                          )}
+                        </div>
                       </div>
                     </div>
+
                     <div>
                       <Label className="text-sm font-semibold">Phone Numbers</Label>
                       <div className="space-y-1">
-                        {selectedAccount.phoneNumbers.map((phone, index) => (
-                          <p key={index} className="text-sm text-muted-foreground">{phone}</p>
-                        ))}
+                        {selectedAccount.phoneNumbers.length > 0 ? (
+                          selectedAccount.phoneNumbers.map((phone, index) => (
+                            <p key={index} className="text-sm text-muted-foreground">{phone}</p>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No phone numbers</p>
+                        )}
                       </div>
                     </div>
-                    <div>
-                      <Label className="text-sm font-semibold">Assigned Agent</Label>
-                      <p className="text-sm text-muted-foreground">{selectedAccount.agent}</p>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-sm font-semibold">Assigned Agent</Label>
+                        <p className="text-sm text-muted-foreground">{selectedAccount.agent}</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm font-semibold">Last Contact</Label>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedAccount.lastContact ? new Date(selectedAccount.lastContact).toLocaleDateString() : 'Never'}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <Label className="text-sm font-semibold">Last Contact</Label>
-                      <p className="text-sm text-muted-foreground">
-                        {selectedAccount.lastContact ? new Date(selectedAccount.lastContact).toLocaleDateString() : 'Never'}
-                      </p>
-                    </div>
+
                     <div>
                       <Label className="text-sm font-semibold">Remarks</Label>
-                      <p className="text-sm text-muted-foreground">{selectedAccount.remarks || 'No remarks'}</p>
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">{selectedAccount.remarks || 'No remarks'}</p>
                     </div>
                   </div>
                 )}
@@ -861,7 +1459,7 @@ export default function Accounts() {
                     Update account information for {selectedAccount?.name}
                   </DialogDescription>
                 </DialogHeader>
-                
+
                 <div className="space-y-4 py-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -890,7 +1488,7 @@ export default function Accounts() {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="editFirstName">First Name</Label>
@@ -898,8 +1496,8 @@ export default function Accounts() {
                         id="editFirstName"
                         placeholder="Juan"
                         value={singleForm.firstName}
-                        onChange={(e) => setSingleForm(prev => ({ 
-                          ...prev, 
+                        onChange={(e) => setSingleForm(prev => ({
+                          ...prev,
                           firstName: e.target.value,
                           fullName: `${e.target.value} ${prev.lastName}`.trim()
                         }))}
@@ -912,8 +1510,8 @@ export default function Accounts() {
                         id="editLastName"
                         placeholder="Dela Cruz"
                         value={singleForm.lastName}
-                        onChange={(e) => setSingleForm(prev => ({ 
-                          ...prev, 
+                        onChange={(e) => setSingleForm(prev => ({
+                          ...prev,
                           lastName: e.target.value,
                           fullName: `${prev.firstName} ${e.target.value}`.trim()
                         }))}
@@ -921,7 +1519,7 @@ export default function Accounts() {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="editOriginalAmount">Original Amount</Label>
@@ -944,7 +1542,7 @@ export default function Accounts() {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="editNotes">Notes/Remarks</Label>
                     <Textarea
@@ -956,20 +1554,19 @@ export default function Accounts() {
                     />
                   </div>
                 </div>
-                
+
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setShowEditAccount(false)}>
                     Cancel
                   </Button>
                   <Button className="bg-gradient-accent hover:shadow-accent" onClick={async () => {
                     if (!selectedAccount) {
-                      console.log('No selected account')
+
                       return
                     }
-                    
-                    console.log('Starting account update...', selectedAccount.id)
-                    console.log('Form data:', singleForm)
-                    
+
+
+
                     try {
                       const updateData = {
                         firstName: singleForm.firstName,
@@ -978,12 +1575,11 @@ export default function Accounts() {
                         currentBalance: parseFloat(singleForm.currentBalance.replace(/,/g, '')),
                         notes: singleForm.notes || undefined
                       }
-                      
-                      console.log('Update data:', updateData)
-                      console.log('About to call accountService.updateAccount with ID:', selectedAccount.id.toString())
+
+
                       const result = await accountService.updateAccount(selectedAccount.id.toString(), updateData)
-                      console.log('Update result:', result)
-                      
+
+
                       alert('Account updated successfully!')
                       setShowEditAccount(false)
                       setSelectedAccount(null)
@@ -1020,50 +1616,83 @@ export default function Accounts() {
                     Update the status for {selectedAccount?.name}
                   </DialogDescription>
                 </DialogHeader>
-                
+
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
                     <Label>Current Status</Label>
-                    <Badge variant="secondary" className="w-fit">
-                      {selectedAccount?.status.toUpperCase()}
-                    </Badge>
+                    <div className="flex gap-2">
+                      <Badge variant="secondary" className="w-fit">
+                        {selectedAccount?.status.toUpperCase()}
+                      </Badge>
+                      {selectedAccount?.secondaryStatus && (
+                        <Badge variant="outline" className="w-fit">
+                          {selectedAccount.secondaryStatus}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="newStatus">New Status</Label>
-                    <Select defaultValue={selectedAccount?.status}>
+                    <Select value={newStatus} onValueChange={setNewStatus}>
                       <SelectTrigger className="glass-light border-glass-border">
                         <SelectValue placeholder="Select new status" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="untouched">UNTOUCHED</SelectItem>
-                        <SelectItem value="touched">TOUCHED</SelectItem>
-                        <SelectItem value="ptp">PROMISE TO PAY</SelectItem>
-                        <SelectItem value="collected">COLLECTED</SelectItem>
-                        <SelectItem value="not_collected">NOT COLLECTED</SelectItem>
+                        <SelectItem value="NEW">NEW / UNTOUCHED</SelectItem>
+                        <SelectItem value="ACTIVE">ACTIVE / TOUCHED</SelectItem>
+                        <SelectItem value="PTP">PROMISE TO PAY</SelectItem>
+                        <SelectItem value="PAID">PAID / COLLECTED</SelectItem>
+                        <SelectItem value="CLOSED">CLOSED</SelectItem>
+                        <SelectItem value="SKIP">SKIP / NOT COLLECTED</SelectItem>
+
+                        {dispositions.length > 0 && <SelectSeparator className="my-2" />}
+                        {dispositions.map(d => (
+                          <SelectItem key={d.id} value={d.newAccountStatus || d.code}>
+                            {d.name} ({d.code})
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="statusNotes">Status Notes</Label>
                     <Textarea
                       id="statusNotes"
                       placeholder="Add notes about the status change..."
                       className="glass-light border-glass-border"
+                      value={statusNotes}
+                      onChange={(e) => setStatusNotes(e.target.value)}
                     />
                   </div>
                 </div>
-                
+
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setShowUpdateStatus(false)}>
                     Cancel
                   </Button>
-                  <Button className="bg-gradient-accent hover:shadow-accent" onClick={() => {
-                    // TODO: Implement status update API call
-                    alert('Status updated successfully!')
-                    setShowUpdateStatus(false)
-                    loadAccounts()
+                  <Button className="bg-gradient-accent hover:shadow-accent" onClick={async () => {
+                    if (!selectedAccount) return
+                    try {
+                      await accountService.updateAccount(selectedAccount.id.toString(), {
+                        status: newStatus as any, // Cast to any or AccountStatus logic
+                        notes: statusNotes
+                      })
+                      toast({
+                        title: "Status updated",
+                        description: "Account status has been updated successfully."
+                      })
+                      setShowUpdateStatus(false)
+                      loadAccounts()
+                    } catch (error) {
+                      console.error('Failed to update status:', error)
+                      toast({
+                        variant: "destructive",
+                        title: "Error",
+                        description: "Failed to update status"
+                      })
+                    }
                   }}>
                     Update Status
                   </Button>
@@ -1080,7 +1709,7 @@ export default function Accounts() {
                     Are you sure you want to remove this account? This action cannot be undone.
                   </DialogDescription>
                 </DialogHeader>
-                
+
                 {selectedAccount && (
                   <div className="space-y-4 py-4">
                     <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-md">
@@ -1095,7 +1724,7 @@ export default function Accounts() {
                     </div>
                   </div>
                 )}
-                
+
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setShowRemoveConfirm(false)}>
                     Cancel
@@ -1110,27 +1739,80 @@ export default function Accounts() {
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-4">
-          <Input
-            placeholder="Search accounts..."
-            value={searchQuery}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="glass-light border-glass-border focus:ring-accent focus:border-accent max-w-md"
-          />
-          
-          {/* Bank Filter */}
-          <Select value={selectedBank} onValueChange={setSelectedBank}>
-            <SelectTrigger className="w-full sm:w-48 glass-light border-glass-border">
-              <SelectValue placeholder="Filter by Bank" />
-            </SelectTrigger>
-            <SelectContent className="bg-glass-medium/95 backdrop-blur-md border-glass-border z-50">
-              {bankPartners.map((bank) => (
-                <SelectItem key={bank.value} value={bank.value} className="hover:bg-glass-light/30 focus:bg-glass-light/30">
-                  {bank.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="relative flex-1">
+              <Input
+                placeholder="Search accounts..."
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                className="glass-light border-glass-border pl-10"
+              />
+              <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 flex-wrap">
+            {/* Agent Filter */}
+            <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+              <SelectTrigger className="w-full sm:w-48 glass-light border-glass-border">
+                <SelectValue placeholder="Filter by Agent" />
+              </SelectTrigger>
+              <SelectContent className="bg-glass-medium/95 backdrop-blur-md border-glass-border z-50">
+                <SelectItem value="all">All Agents</SelectItem>
+                {agents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id} className="hover:bg-glass-light/30 focus:bg-glass-light/30">
+                    {agent.firstName} {agent.lastName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Status Filter */}
+            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+              <SelectTrigger className="w-full sm:w-48 glass-light border-glass-border">
+                <SelectValue placeholder="Filter by Status" />
+              </SelectTrigger>
+              <SelectContent className="bg-glass-medium/95 backdrop-blur-md border-glass-border z-50">
+                {statusOptions.map((status) => (
+                  <SelectItem key={status.value} value={status.value} className="hover:bg-glass-light/30 focus:bg-glass-light/30">
+                    {status.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Campaign Filter */}
+            <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
+              <SelectTrigger className="w-full sm:w-48 glass-light border-glass-border">
+                <SelectValue placeholder="Filter by Campaign" />
+              </SelectTrigger>
+              <SelectContent className="bg-glass-medium/95 backdrop-blur-md border-glass-border z-50">
+                <SelectItem value="all">All Campaigns</SelectItem>
+                {campaigns.map((campaign) => (
+                  <SelectItem key={campaign.campaign_id} value={campaign.campaign_id} className="hover:bg-glass-light/30 focus:bg-glass-light/30">
+                    {campaign.campaign_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Sort Filter */}
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-full sm:w-48 glass-light border-glass-border">
+                <SelectValue placeholder="Sort By" />
+              </SelectTrigger>
+              <SelectContent className="bg-glass-medium/95 backdrop-blur-md border-glass-border z-50">
+                {sortOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value} className="hover:bg-glass-light/30 focus:bg-glass-light/30">
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
@@ -1190,7 +1872,7 @@ export default function Accounts() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold font-mono text-foreground">
-              {loading ? '...' : formatCurrency(statistics?.financialMetrics?.totalBalance || filteredAccounts.reduce((sum, account) => sum + account.balance, 0))}
+              {loading ? '...' : formatCurrency(statistics?.totalBalance || filteredAccounts.reduce((sum, account) => sum + account.balance, 0))}
             </div>
             <p className="text-xs text-muted-foreground">Total owed</p>
           </CardContent>
@@ -1215,8 +1897,10 @@ export default function Accounts() {
                 <TableHead>Bank Partner</TableHead>
                 <TableHead>Balance</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Secondary Status</TableHead>
                 <TableHead>Due Date</TableHead>
                 <TableHead>Agent</TableHead>
+                <TableHead>Assigned Date</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -1233,15 +1917,17 @@ export default function Accounts() {
                     <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
                     <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
                     <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                    <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                    <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
                   </TableRow>
                 ))
               ) : error ? (
                 // Error state
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12">
+                  <TableCell colSpan={10} className="text-center py-12">
                     <div className="text-red-500 mb-2">{error}</div>
-                    <Button 
-                      onClick={() => loadAccounts()} 
+                    <Button
+                      onClick={() => loadAccounts()}
                       variant="outline"
                       size="sm"
                     >
@@ -1252,94 +1938,114 @@ export default function Accounts() {
               ) : filteredAccounts.length === 0 ? (
                 // Empty state
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
                     No accounts found
                   </TableCell>
                 </TableRow>
               ) : (
                 // Data rows
                 filteredAccounts.map((account, index) => (
-                  <TableRow 
+                  <TableRow
                     key={account.id}
                     className="animate-slide-up"
                     style={{ animationDelay: `${index * 0.05}s` }}
                   >
-                  <TableCell>
-                    <div className="font-mono text-sm font-bold text-accent">{account.accountId}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium text-foreground">{account.name}</div>
-                      {account.email && <div className="text-xs text-muted-foreground">{account.email}</div>}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      {account.phoneNumbers.map((phone, idx) => (
-                        <div key={idx} className="font-mono text-sm flex items-center">
-                          <Phone className="w-3 h-3 mr-1 text-muted-foreground" />
-                          {phone}
-                          {idx === 0 && account.phoneNumbers.length > 1 && (
-                            <Badge variant="outline" className="ml-2 text-xs">Primary</Badge>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm font-medium">{account.bankPartner}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-mono font-bold text-foreground">
-                      {formatCurrency(account.balance)}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={getStatusColor(account.status)}>
-                      <span className="mr-1">{getStatusIcon(account.status)}</span>
-                      {account.status.replace('_', ' ').toUpperCase()}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-mono text-sm">{account.dueDate}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">{account.agent}</div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end space-x-2">
-                      <Button variant="outline" size="sm" className="glass-light">
-                        <Phone className="w-4 h-4 mr-1" />
-                        Call
-                      </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="glass-dropdown">
-                          <DropdownMenuItem onClick={() => handleViewDetails(account)}>
-                            View Details
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleEditAccount(account)}>
-                            Edit Account
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleCallHistory(account)}>
-                            Call History
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleUpdateStatus(account)}>
-                            Update Status
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-destructive" onClick={() => handleRemoveAccount(account)}>
-                            Remove Account
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                    <TableCell>
+                      <div className="font-mono text-sm font-bold text-accent">{account.accountId}</div>
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex flex-col">
+                        <span className="text-foreground">{account.name}</span>
+                        <span className="text-xs text-muted-foreground">{account.accountId}</span>
+                        {account.phoneNumbers.some(p => activeLivePhones.has(p)) && (
+                          <Badge variant="destructive" className="w-fit mt-1 text-[10px] px-1 py-0 h-5">
+                            IN CALL
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        {account.phoneNumbers.map((phone, idx) => (
+                          <div key={idx} className="font-mono text-sm flex items-center">
+                            <Phone className="w-3 h-3 mr-1 text-muted-foreground" />
+                            {phone}
+                            {idx === 0 && account.phoneNumbers.length > 1 && (
+                              <Badge variant="outline" className="ml-2 text-xs">Primary</Badge>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm font-medium">{account.bankPartner}</div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-mono font-bold text-foreground">
+                        {formatCurrency(account.balance)}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={getStatusColor(account.status)}>
+                        <span className="mr-1">{getStatusIcon(account.status)}</span>
+                        {account.status.replace('_', ' ').toUpperCase()}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm font-medium text-muted-foreground">
+                        {account.secondaryStatus || '-'}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-mono text-sm">{account.dueDate}</div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">{account.agent}</div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm text-muted-foreground">
+                        {account.assignedDate ? new Date(account.assignedDate).toLocaleDateString() : '-'}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="glass-light"
+                          onClick={() => handleManualCall(account)}
+                        >
+                          <Phone className="w-4 h-4 mr-1" />
+                          Call
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="glass-dropdown">
+                            <DropdownMenuItem onClick={() => handleViewDetails(account)}>
+                              View Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleEditAccount(account)}>
+                              Edit Account
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleCallHistory(account)}>
+                              Call History
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleUpdateStatus(account)}>
+                              Update Status
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem className="text-destructive" onClick={() => handleRemoveAccount(account)}>
+                              Remove Account
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
             </TableBody>
@@ -1359,6 +2065,32 @@ export default function Accounts() {
             </div>
           )}
         </CardContent>
+        <CardFooter className="flex items-center justify-between space-x-2 py-4 border-t border-border/40 bg-muted/5">
+          <div className="text-sm text-muted-foreground">
+            Showing {pagination.total === 0 ? 0 : ((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} entries
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => loadAccounts({ page: pagination.page - 1 })}
+              disabled={pagination.page <= 1 || loading}
+            >
+              Previous
+            </Button>
+            <div className="text-sm font-medium">
+              Page {pagination.page} of {pagination.totalPages || 1}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => loadAccounts({ page: pagination.page + 1 })}
+              disabled={pagination.page >= pagination.totalPages || loading}
+            >
+              Next
+            </Button>
+          </div>
+        </CardFooter>
       </Card>
     </div>
   )

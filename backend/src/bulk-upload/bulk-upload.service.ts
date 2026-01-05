@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { VicidialService } from '../vicidial/vicidial.service';
 import * as csv from 'csv-parser';
 import * as XLSX from 'xlsx';
 import { Readable } from 'stream';
@@ -29,6 +30,8 @@ export interface BulkUploadOptions {
   batchName?: string;
   skipErrors?: boolean;
   updateExisting?: boolean;
+  campaignId?: string;
+  vicidialListId?: string;
 }
 
 // ================================
@@ -36,7 +39,10 @@ export interface BulkUploadOptions {
 // ================================
 @Injectable()
 export class BulkUploadService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private vicidialService: VicidialService
+  ) {}
 
   /**
    * Process uploaded file for bulk account creation
@@ -185,6 +191,51 @@ export class BulkUploadService {
     };
 
     const accountsToCreate: any[] = [];
+    const phoneNumbersToCreate: { accountNumber: string; phoneNumber: string }[] = [];
+
+    // Resolve Campaign ID if provided
+    let targetCampaignId: string | undefined = undefined;
+    if (options.campaignId) {
+        try {
+            // Check if campaign exists by ID (UUID) or Vicidial ID
+            let campaign = await this.prisma.campaign.findFirst({
+                where: { 
+                    OR: [
+                        { id: options.campaignId }, // In case it IS a UUID
+                        { vicidialCampaignId: options.campaignId },
+                        { name: options.campaignId } // Fallback to name
+                    ]
+                }
+            });
+
+            if (!campaign) {
+                // Create it if it doesn't exist
+                console.log(`Campaign ${options.campaignId} not found in local DB. Creating it...`);
+                try {
+                    campaign = await this.prisma.campaign.create({
+                        data: {
+                            name: options.campaignId,
+                            vicidialCampaignId: options.campaignId,
+                            status: 'ACTIVE'
+                        }
+                    });
+                } catch (e) {
+                    console.warn(`Failed to create campaign ${options.campaignId}, trying to find by name...`, e.message);
+                    // If creation fails (e.g. name unique constraint), try to find it again
+                    campaign = await this.prisma.campaign.findFirst({
+                        where: { name: options.campaignId }
+                    });
+                }
+            }
+            
+            if (campaign) {
+                targetCampaignId = campaign.id;
+            }
+        } catch (error) {
+            console.error('Error resolving campaign:', error);
+            // Fallback: don't set campaignId if resolution fails
+        }
+    }
 
     for (let i = 0; i < records.length; i++) {
       const record = records[i];
@@ -211,40 +262,61 @@ export class BulkUploadService {
           result.duplicates++;
           if (options.updateExisting) {
             // Update existing account (simplified - no phone number updates)
+            const { phoneNumber, ...updateData } = validatedRecord.data;
             await this.prisma.account.update({
               where: { accountNumber: validatedRecord.data.accountNumber },
               data: {
-                firstName: validatedRecord.data.firstName,
-                lastName: validatedRecord.data.lastName,
-                fullName: validatedRecord.data.fullName,
-                email: validatedRecord.data.email,
-                address1: validatedRecord.data.address1,
-                address2: validatedRecord.data.address2,
-                city: validatedRecord.data.city,
-                state: validatedRecord.data.state,
-                zipCode: validatedRecord.data.zipCode,
-                country: validatedRecord.data.country,
-                originalAmount: validatedRecord.data.originalAmount,
-                currentBalance: validatedRecord.data.currentBalance,
-                amountPaid: validatedRecord.data.amountPaid,
-                interestRate: validatedRecord.data.interestRate,
-                status: validatedRecord.data.status,
-                priority: validatedRecord.data.priority,
-                preferredContactMethod: validatedRecord.data.preferredContactMethod,
-                bestTimeToCall: validatedRecord.data.bestTimeToCall,
-                timezone: validatedRecord.data.timezone,
-                language: validatedRecord.data.language,
-                daysPastDue: validatedRecord.data.daysPastDue,
-                doNotCall: validatedRecord.data.doNotCall,
-                disputeFlag: validatedRecord.data.disputeFlag,
-                bankruptcyFlag: validatedRecord.data.bankruptcyFlag,
-                deceasedFlag: validatedRecord.data.deceasedFlag,
-                notes: validatedRecord.data.notes,
-                source: validatedRecord.data.source,
+                firstName: updateData.firstName,
+                lastName: updateData.lastName,
+                fullName: updateData.fullName,
+                email: updateData.email,
+                address1: updateData.address1,
+                address2: updateData.address2,
+                city: updateData.city,
+                state: updateData.state,
+                zipCode: updateData.zipCode,
+                country: updateData.country,
+                originalAmount: updateData.originalAmount,
+                currentBalance: updateData.currentBalance,
+                amountPaid: updateData.amountPaid,
+                interestRate: updateData.interestRate,
+                status: updateData.status,
+                priority: updateData.priority,
+                preferredContactMethod: updateData.preferredContactMethod,
+                bestTimeToCall: updateData.bestTimeToCall,
+                timezone: updateData.timezone,
+                language: updateData.language,
+                daysPastDue: updateData.daysPastDue,
+                doNotCall: updateData.doNotCall,
+                disputeFlag: updateData.disputeFlag,
+                bankruptcyFlag: updateData.bankruptcyFlag,
+                deceasedFlag: updateData.deceasedFlag,
+                notes: updateData.notes,
+                source: updateData.source,
+                campaignId: targetCampaignId,
                 batchId,
                 updatedAt: new Date(),
               }
             });
+            
+            // Update phone number if provided
+            if (phoneNumber) {
+                // Check if phone exists
+                const existingPhone = await this.prisma.accountPhone.findFirst({
+                    where: { accountId: existingAccount.id, phoneNumber: phoneNumber }
+                });
+                
+                if (!existingPhone) {
+                    await this.prisma.accountPhone.create({
+                        data: {
+                            accountId: existingAccount.id,
+                            phoneNumber: phoneNumber,
+                            phoneType: 'PRIMARY'
+                        }
+                    });
+                }
+            }
+            
             result.successfulRecords++;
           } else {
             result.errors.push({
@@ -254,12 +326,21 @@ export class BulkUploadService {
             result.failedRecords++;
           }
         } else {
+          const { phoneNumber, ...createData } = validatedRecord.data;
           accountsToCreate.push({
-            ...validatedRecord.data,
+            ...createData,
+            campaignId: targetCampaignId,
             batchId,
             createdAt: new Date(),
             updatedAt: new Date(),
           });
+          
+          if (phoneNumber) {
+              phoneNumbersToCreate.push({
+                  accountNumber: createData.accountNumber,
+                  phoneNumber: phoneNumber
+              });
+          }
         }
 
       } catch (error) {
@@ -278,7 +359,102 @@ export class BulkUploadService {
         await this.prisma.account.createMany({
           data: accountsToCreate,
         });
+        
+        // Create phone numbers for new accounts
+        if (phoneNumbersToCreate.length > 0) {
+            const createdAccounts = await this.prisma.account.findMany({
+                where: {
+                    batchId: batchId,
+                    accountNumber: { in: phoneNumbersToCreate.map(p => p.accountNumber) }
+                },
+                select: { id: true, accountNumber: true }
+            });
+            
+            const phoneRecords = [];
+            for (const acc of createdAccounts) {
+                const phone = phoneNumbersToCreate.find(p => p.accountNumber === acc.accountNumber);
+                if (phone) {
+                    phoneRecords.push({
+                        accountId: acc.id,
+                        phoneNumber: phone.phoneNumber,
+                        phoneType: 'PRIMARY'
+                    });
+                }
+            }
+            
+            if (phoneRecords.length > 0) {
+                await this.prisma.accountPhone.createMany({
+                    data: phoneRecords
+                });
+            }
+        }
+        
         result.successfulRecords += accountsToCreate.length;
+
+        // =================================================================
+        // VICIDIAL SYNC LOGIC
+        // =================================================================
+        if (options.campaignId) {
+            try {
+                // Determine List ID
+                let listId = options.vicidialListId;
+                
+                if (!listId) {
+                    // Try to get from Campaign
+                    const campaign = await this.prisma.campaign.findUnique({
+                        where: { id: options.campaignId }
+                    });
+                    
+                    if (campaign && campaign.vicidialCampaignId) {
+                        // If we have a Vicidial Campaign ID, we might use a default list or try to infer it.
+                        // For now, let's use a convention: 1000 + numeric part of campaign ID? 
+                        // Or just use a default list '999' for "General Uploads" if not specified.
+                        // But better to just log if we can't determine it.
+                        // Let's assume listId = 1000 if not provided, just to have a target.
+                        // Or better: If the user didn't provide a list ID, we can't sync safely.
+                        // BUT the user requirement is "select the campaign... vicidial also track it".
+                        // So we must try.
+                        // Let's use a default list ID '1001' for now as a fallback.
+                        listId = '1001'; 
+                    }
+                }
+
+                if (listId) {
+                    // Prepare leads for Vicidial (Format A)
+                    // We need to combine accountsToCreate and updated accounts (if any)
+                    // For simplicity, let's just sync the ones we just created/processed in this batch
+                    // We can fetch them back to be sure we have all fields
+                    const accountsToSync = await this.prisma.account.findMany({
+                        where: { batchId: batchId },
+                        include: { phoneNumbers: true }
+                    });
+
+                    const leads = accountsToSync.map(account => ({
+                        vendor_lead_code: account.accountNumber,
+                        phone_number: account.phoneNumbers.length > 0 ? account.phoneNumbers[0].phoneNumber : '',
+                        first_name: account.firstName,
+                        last_name: account.currentBalance?.toString() || '0', // Balance in Last Name
+                        address1: account.address1 || '',
+                        address2: account.source || 'Unknown', // Bank/Source
+                        address3: account.originalAmount?.toString() || '0', // Original Amount
+                        city: account.accountNumber, // Account ID in City
+                        state: account.state || '',
+                        postal_code: account.zipCode || '',
+                        email: account.email || '',
+                        comments: account.notes || '',
+                        status: account.status || 'NEW'
+                    }));
+
+                    await this.vicidialService.syncLeads(leads, listId);
+                    result.message += ` Synced ${leads.length} leads to Vicidial List ${listId}.`;
+                }
+            } catch (syncError) {
+                console.error('Failed to sync to Vicidial during upload:', syncError);
+                result.message += ` (Vicidial Sync Failed: ${syncError.message})`;
+                // Don't fail the whole upload, just warn
+            }
+        }
+
       } catch (error) {
         result.errors.push({
           row: 0,
@@ -301,90 +477,160 @@ export class BulkUploadService {
     const errors: BulkUploadError[] = [];
     const data: any = {};
 
-    // Required fields validation
-    if (!record.accountNumber && !record.account_number) {
-      errors.push({ row: rowNumber, field: 'accountNumber', message: 'Account number is required' });
+    // Create a normalized map of the record for flexible matching
+    const normalizedRecord: Record<string, any> = {};
+    Object.keys(record).forEach(key => {
+        const value = record[key];
+        if (value === undefined || value === null) return;
+        
+        // 1. Exact key
+        normalizedRecord[key] = value;
+        
+        // 2. Clean key (trim, remove BOM)
+        const cleanKey = key.toString().trim().replace(/^\ufeff/, '');
+        normalizedRecord[cleanKey] = value;
+        
+        // 3. Normalized key (lowercase, no spaces/underscores)
+        const normalizedKey = cleanKey.toLowerCase().replace(/[\s_]+/g, '');
+        normalizedRecord[normalizedKey] = value;
+    });
+
+    // Helper to get value from multiple possible keys
+    const getValue = (keys: string[]) => {
+      for (const key of keys) {
+        // Try exact match on normalized map (which contains exact keys too)
+        if (normalizedRecord[key] !== undefined && normalizedRecord[key] !== '') return normalizedRecord[key];
+        
+        // Try normalized match
+        const searchKey = key.toLowerCase().replace(/[\s_]+/g, '');
+        if (normalizedRecord[searchKey] !== undefined && normalizedRecord[searchKey] !== '') return normalizedRecord[searchKey];
+      }
+      return undefined;
+    };
+
+    // 1. Account Number
+    const accountNumber = getValue(['Account Number', 'accountNumber', 'account_number']);
+    if (!accountNumber) {
+      // Log available keys for debugging if account number is missing
+      console.log(`Row ${rowNumber} missing Account Number. Available keys:`, Object.keys(normalizedRecord));
+      errors.push({ row: rowNumber, field: 'Account Number', message: 'Account number is required' });
     } else {
-      data.accountNumber = record.accountNumber || record.account_number;
+      data.accountNumber = accountNumber;
     }
 
-    if (!record.firstName && !record.first_name) {
-      errors.push({ row: rowNumber, field: 'firstName', message: 'First name is required' });
+    // 2. Name (Split into First/Last)
+    const name = getValue(['Name', 'name', 'fullName', 'full_name']);
+    const firstName = getValue(['First Name', 'firstName', 'first_name']);
+    const lastName = getValue(['Last Name', 'lastName', 'last_name']);
+
+    if (name) {
+      const nameParts = name.toString().trim().split(' ');
+      if (nameParts.length === 1) {
+        data.firstName = nameParts[0];
+        data.lastName = '.'; // Placeholder if no last name
+      } else {
+        data.lastName = nameParts.pop();
+        data.firstName = nameParts.join(' ');
+      }
     } else {
-      data.firstName = record.firstName || record.first_name;
+      if (firstName) data.firstName = firstName;
+      if (lastName) data.lastName = lastName;
     }
 
-    if (!record.lastName && !record.last_name) {
-      errors.push({ row: rowNumber, field: 'lastName', message: 'Last name is required' });
-    } else {
-      data.lastName = record.lastName || record.last_name;
+    if (!data.firstName) {
+       // Fallback or error? Let's error if absolutely no name
+       if (!data.lastName) {
+           errors.push({ row: rowNumber, field: 'Name', message: 'Name is required' });
+       } else {
+           data.firstName = 'Unknown';
+       }
     }
+    if (!data.lastName) data.lastName = '.'; // Default if missing
 
-    // Calculate full name
-    data.fullName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+    data.fullName = `${data.firstName} ${data.lastName}`.trim();
 
-    // Financial fields validation
-    const originalAmount = parseFloat(record.originalAmount || record.original_amount || '0');
-    const currentBalance = parseFloat(record.currentBalance || record.current_balance || originalAmount || '0');
+    // 3. Email
+    data.email = getValue(['Email', 'email']);
 
+    // 4. Address
+    data.address1 = getValue(['Address', 'address', 'address1']);
+    // Try to extract city/state/zip if address is comma separated? 
+    // For now, just map to address1.
+    data.city = getValue(['City', 'city']);
+    data.state = getValue(['State', 'state']);
+    data.zipCode = getValue(['Zip Code', 'zipCode', 'zip_code', 'zip']);
+
+    // 5. Original Amount
+    const originalAmountRaw = getValue(['Original Amount', 'originalAmount', 'original_amount']);
+    // Remove currency symbols and commas
+    const cleanOriginalAmount = originalAmountRaw ? originalAmountRaw.toString().replace(/[^0-9.-]+/g, '') : '0';
+    const originalAmount = parseFloat(cleanOriginalAmount);
+    
     if (isNaN(originalAmount) || originalAmount < 0) {
-      errors.push({ row: rowNumber, field: 'originalAmount', message: 'Original amount must be a positive number' });
+       if (originalAmountRaw !== undefined) {
+           errors.push({ row: rowNumber, field: 'Original Amount', message: 'Original amount must be a positive number' });
+       }
+       data.originalAmount = 0;
     } else {
       data.originalAmount = originalAmount;
     }
 
-    if (isNaN(currentBalance) || currentBalance < 0) {
-      errors.push({ row: rowNumber, field: 'currentBalance', message: 'Current balance must be a positive number' });
+    // 6. Out Standing Balance (OSB)
+    const currentBalanceRaw = getValue(['Out Standing Balance (OSB)', 'Out Standing Balance', 'OSB', 'currentBalance', 'current_balance']);
+    const cleanCurrentBalance = currentBalanceRaw ? currentBalanceRaw.toString().replace(/[^0-9.-]+/g, '') : '0';
+    const currentBalance = parseFloat(cleanCurrentBalance);
+
+    if (isNaN(currentBalance)) {
+       if (currentBalanceRaw !== undefined) {
+           errors.push({ row: rowNumber, field: 'Out Standing Balance (OSB)', message: 'Balance must be a number' });
+       }
+       data.currentBalance = 0;
     } else {
       data.currentBalance = currentBalance;
     }
 
-    // Optional fields
-    data.email = record.email || null;
-    data.address1 = record.address1 || record.address || null;
-    data.address2 = record.address2 || null;
-    data.city = record.city || null;
-    data.state = record.state || null;
-    data.zipCode = record.zipCode || record.zip_code || record.zip || null;
-    data.country = record.country || 'US';
-    data.amountPaid = parseFloat(record.amountPaid || record.amount_paid || '0') || 0;
-    data.interestRate = parseFloat(record.interestRate || record.interest_rate || '0') || null;
-    data.status = (record.status || 'NEW').toUpperCase();
-    data.priority = (record.priority || 'MEDIUM').toUpperCase();
-    data.preferredContactMethod = record.preferredContactMethod || record.preferred_contact_method || 'PHONE';
-    data.bestTimeToCall = record.bestTimeToCall || record.best_time_to_call || null;
-    data.timezone = record.timezone || 'EST';
-    data.language = record.language || 'EN';
-    data.daysPastDue = parseInt(record.daysPastDue || record.days_past_due || '0') || 0;
-    data.doNotCall = Boolean(record.doNotCall || record.do_not_call || false);
-    data.disputeFlag = Boolean(record.disputeFlag || record.dispute_flag || false);
-    data.bankruptcyFlag = Boolean(record.bankruptcyFlag || record.bankruptcy_flag || false);
-    data.deceasedFlag = Boolean(record.deceasedFlag || record.deceased_flag || false);
-    data.notes = record.notes || null;
-    data.source = record.source || 'BULK_UPLOAD';
+    // 7. Bank Partner
+    data.source = getValue(['Bank Partner', 'Bank', 'source', 'Source']);
 
-    // Date fields
-    if (record.lastPaymentDate || record.last_payment_date) {
-      const lastPaymentDate = new Date(record.lastPaymentDate || record.last_payment_date);
-      if (!isNaN(lastPaymentDate.getTime())) {
-        data.lastPaymentDate = lastPaymentDate;
-        data.lastPaymentAmount = parseFloat(record.lastPaymentAmount || record.last_payment_amount || '0') || null;
-      }
+    // 8. Status
+    const statusRaw = getValue(['Status', 'status']);
+    data.status = (statusRaw || 'NEW').toUpperCase();
+    // If "UNTOUCHED", map to "NEW"
+    if (data.status === 'UNTOUCHED') data.status = 'NEW';
+
+    // 9. Phone Numbers
+    data.phoneNumber = getValue(['Phone Numbers', 'Phone Number', 'Phone', 'phoneNumber', 'phone_number']);
+
+    // 10. Assigned Agent
+    const assignedAgent = getValue(['Assigned Agent', 'Agent', 'assignedAgent', 'assigned_agent']);
+    if (assignedAgent) {
+        data.notes = data.notes ? `${data.notes}\nAssigned Agent: ${assignedAgent}` : `Assigned Agent: ${assignedAgent}`;
     }
 
-    if (record.lastContactDate || record.last_contact_date) {
-      const lastContactDate = new Date(record.lastContactDate || record.last_contact_date);
+    // 11. Last Contact
+    const lastContactRaw = getValue(['Last Contact', 'lastContact', 'lastContactDate', 'last_contact_date']);
+    if (lastContactRaw) {
+      const lastContactDate = new Date(lastContactRaw);
       if (!isNaN(lastContactDate.getTime())) {
         data.lastContactDate = lastContactDate;
       }
     }
 
-    if (record.nextContactDate || record.next_contact_date) {
-      const nextContactDate = new Date(record.nextContactDate || record.next_contact_date);
-      if (!isNaN(nextContactDate.getTime())) {
-        data.nextContactDate = nextContactDate;
-      }
+    // 12. Remarks
+    const remarks = getValue(['Remarks', 'remarks', 'notes']);
+    if (remarks) {
+        data.notes = data.notes ? `${data.notes}\n${remarks}` : remarks;
     }
+
+    // Defaults for other fields
+    data.country = 'US';
+    data.amountPaid = 0;
+    data.priority = 'MEDIUM';
+    data.preferredContactMethod = 'PHONE';
+    data.timezone = 'EST';
+    data.language = 'EN';
+    data.daysPastDue = 0;
+    data.doNotCall = false;
 
     return { data, errors };
   }

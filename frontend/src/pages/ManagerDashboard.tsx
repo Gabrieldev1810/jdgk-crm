@@ -91,10 +91,13 @@ function ManagerKPICard({ title, value, change, changeType, icon, description }:
   )
 }
 
+import { RealtimeReport } from "@/components/vicidial/RealtimeReport"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+
 export default function ManagerDashboard() {
   const navigate = useNavigate()
   const [currentTime, setCurrentTime] = useState(new Date())
-  const [selectedMetric, setSelectedMetric] = useState<string>("batch")
+  const [selectedMetric, setSelectedMetric] = useState<string>("team")
   const [selectedBank, setSelectedBank] = useState<string>("all")
   const [dashboardData, setDashboardData] = useState<DashboardMetrics | null>(null)
   const [loading, setLoading] = useState(true)
@@ -233,8 +236,44 @@ export default function ManagerDashboard() {
     }
   ] : []
   
+  const teamMetrics = dashboardData ? [
+    {
+      title: "Team Accounts Assigned",
+      value: dashboardData.totalAccounts.toLocaleString(),
+      change: "Total assigned",
+      changeType: "neutral" as const,
+      icon: <Users className="h-4 w-4 text-accent" />,
+      description: "Active portfolio"
+    },
+    {
+      title: "Team Accounts Worked",
+      value: dashboardData.touchedAccounts.toLocaleString(),
+      change: `${((dashboardData.touchedAccounts / dashboardData.totalAccounts) * 100).toFixed(1)}% coverage`,
+      changeType: "positive" as const,
+      icon: <CheckCircle className="h-4 w-4 text-success" />,
+      description: "Accounts contacted"
+    },
+    {
+      title: "Team Calls Made",
+      value: dashboardData.totalCallsToday.toLocaleString(),
+      change: "Today's volume",
+      changeType: "neutral" as const,
+      icon: <Phone className="h-4 w-4 text-accent" />,
+      description: "Outbound calls"
+    },
+    {
+      title: "Team Collections vs Quota",
+      value: `$${(dashboardData.totalCollected / 1000).toFixed(1)}K`,
+      change: dashboardData.teamQuota ? `${((dashboardData.totalCollected / dashboardData.teamQuota) * 100).toFixed(1)}% of goal` : "No quota set",
+      changeType: "positive" as const,
+      icon: <Target className="h-4 w-4 text-warning" />,
+      description: dashboardData.teamQuota ? `Target: $${(dashboardData.teamQuota / 1000).toFixed(1)}K` : "Target: N/A"
+    }
+  ] : []
+  
   // Metric categories
   const metricCategories = {
+    team: { title: "Team Summary", data: teamMetrics },
     batch: { title: "Batch Metrics", data: batchMetrics },
     calls: { title: "Call Metrics", data: callMetrics },
     financial: { title: "Financial Metrics", data: financialMetrics }
@@ -250,6 +289,19 @@ export default function ManagerDashboard() {
   
   return (
     <div className="min-h-screen bg-background p-4 md:p-6 space-y-4 md:space-y-6 animate-fade-in">
+      <Tabs defaultValue="overview" className="space-y-6">
+        <div className="flex justify-between items-center">
+            <TabsList>
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="realtime">Real-time Report</TabsTrigger>
+            </TabsList>
+        </div>
+
+        <TabsContent value="realtime">
+            <RealtimeReport />
+        </TabsContent>
+
+        <TabsContent value="overview" className="space-y-6">
       {/* Header with KPI Selector */}
       <div className="glass-card p-4 md:p-6">
         <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-4 md:mb-6">
@@ -295,6 +347,12 @@ export default function ManagerDashboard() {
                 <ChevronDown className="h-4 w-4 opacity-50" />
               </SelectTrigger>
               <SelectContent className="bg-glass-medium/95 backdrop-blur-md border-glass-border z-50">
+                <SelectItem value="team" className="hover:bg-glass-light/30 focus:bg-glass-light/30">
+                  <div className="flex items-center space-x-2">
+                    <Users className="h-4 w-4 text-accent" />
+                    <span>Team Summary</span>
+                  </div>
+                </SelectItem>
                 <SelectItem value="batch" className="hover:bg-glass-light/30 focus:bg-glass-light/30">
                   <div className="flex items-center space-x-2">
                     <Upload className="h-4 w-4 text-accent" />
@@ -442,15 +500,17 @@ export default function ManagerDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              <div className="text-xs text-muted-foreground">From 1-6 Dec, 2020</div>
+              <div className="text-xs text-muted-foreground">Today's Breakdown</div>
               {/* Donut chart representation */}
               <div className="flex items-center justify-center relative">
                 <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-6 md:border-8 border-muted relative">
                   <div className="absolute inset-0 rounded-full border-6 md:border-8 border-transparent border-t-accent transform rotate-45"></div>
                   <div className="absolute inset-1 md:inset-2 rounded-full bg-primary flex items-center justify-center">
                     <div className="text-center">
-                      <div className="text-primary-foreground text-xs font-medium">Afternoon</div>
-                      <div className="text-primary-foreground text-sm md:text-lg font-bold font-mono">1,890</div>
+                      <div className="text-primary-foreground text-xs font-medium">Total</div>
+                      <div className="text-primary-foreground text-sm md:text-lg font-bold font-mono">
+                        {dashboardData ? dashboardData.totalCallsToday.toLocaleString() : 0}
+                      </div>
                       <div className="text-primary-foreground text-xs">calls</div>
                     </div>
                   </div>
@@ -462,21 +522,27 @@ export default function ManagerDashboard() {
                     <div className="w-2 h-2 bg-primary rounded-full mr-1"></div>
                     <span className="text-muted-foreground text-xs">Afternoon</span>
                   </div>
-                  <div className="text-foreground font-medium">40%</div>
+                  <div className="text-foreground font-medium">
+                    {dashboardData?.timeOfDayBreakdown?.afternoon || 0}%
+                  </div>
                 </div>
                 <div className="text-center">
                   <div className="flex items-center justify-center mb-1">
                     <div className="w-2 h-2 bg-accent rounded-full mr-1"></div>
                     <span className="text-muted-foreground text-xs">Evening</span>
                   </div>
-                  <div className="text-foreground font-medium">32%</div>
+                  <div className="text-foreground font-medium">
+                    {dashboardData?.timeOfDayBreakdown?.evening || 0}%
+                  </div>
                 </div>
                 <div className="text-center">
                   <div className="flex items-center justify-center mb-1">
                     <div className="w-2 h-2 bg-muted rounded-full mr-1"></div>
                     <span className="text-muted-foreground text-xs">Morning</span>
                   </div>
-                  <div className="text-foreground font-medium">28%</div>
+                  <div className="text-foreground font-medium">
+                    {dashboardData?.timeOfDayBreakdown?.morning || 0}%
+                  </div>
                 </div>
               </div>
             </div>
@@ -502,27 +568,35 @@ export default function ManagerDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              <div className="text-xl md:text-2xl font-bold text-foreground font-mono">2,568</div>
+              <div className="text-xl md:text-2xl font-bold text-foreground font-mono">
+                ${dashboardData ? (dashboardData.totalCollected / 1000).toFixed(1) : 0}K
+              </div>
               <div className="flex items-center text-sm">
                 <ArrowUp className="h-3 w-3 text-success mr-1" />
-                <span className="text-success font-medium">2.1%</span>
-                <span className="text-muted-foreground ml-1">vs last week</span>
+                <span className="text-success font-medium">
+                  {dashboardData ? dashboardData.collectionRate.toFixed(1) : 0}%
+                </span>
+                <span className="text-muted-foreground ml-1">collection rate</span>
               </div>
-              <div className="text-xs text-muted-foreground mb-3">Results from 1-6 Dec, 2020</div>
-              {/* Line chart representation */}
-              <div className="h-12 md:h-16 flex items-end">
-                <svg className="w-full h-full" viewBox="0 0 200 60">
-                  <polyline
-                    fill="none"
-                    stroke="hsl(var(--accent))"
-                    strokeWidth="2"
-                    points="10,50 30,40 50,45 70,30 90,25 110,35 130,20 150,15 170,10 190,5"
-                  />
-                </svg>
+              <div className="text-xs text-muted-foreground mb-3">Last 7 Days</div>
+              {/* Bar chart representation */}
+              <div className="h-12 md:h-16 flex items-end space-x-1">
+                {dashboardData?.collectionsTimeline.map((data, i) => {
+                  const maxValue = Math.max(...dashboardData.collectionsTimeline.map(d => d.value));
+                  const height = maxValue > 0 ? (data.value / maxValue) * 100 : 0;
+                  return (
+                    <div 
+                      key={i} 
+                      className="bg-success rounded-sm flex-1 opacity-80 hover:opacity-100 transition-opacity" 
+                      style={{ height: `${Math.max(height, 10)}%` }}
+                      title={`${data.label}: $${data.value.toLocaleString()}`}
+                    />
+                  );
+                })}
               </div>
               <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                <span>• Last 6 days</span>
-                <span>• Last Week</span>
+                <span>• Last 7 days</span>
+                <span>• Trending</span>
               </div>
             </div>
           </CardContent>
@@ -550,8 +624,10 @@ export default function ManagerDashboard() {
                     </div>
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="text-center">
-                        <div className="text-accent text-sm md:text-lg font-bold font-mono">85%</div>
-                        <div className="text-xs text-muted-foreground">Quality</div>
+                        <div className="text-accent text-sm md:text-lg font-bold font-mono">
+                          {dashboardData ? dashboardData.contactRate.toFixed(0) : 0}%
+                        </div>
+                        <div className="text-xs text-muted-foreground">Contact</div>
                       </div>
                     </div>
                   </div>
@@ -563,8 +639,10 @@ export default function ManagerDashboard() {
                     </div>
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="text-center">
-                        <div className="text-warning text-sm md:text-lg font-bold font-mono">85%</div>
-                        <div className="text-xs text-muted-foreground">Efficiency</div>
+                        <div className="text-warning text-sm md:text-lg font-bold font-mono">
+                          {dashboardData ? dashboardData.collectionRate.toFixed(0) : 0}%
+                        </div>
+                        <div className="text-xs text-muted-foreground">Collect</div>
                       </div>
                     </div>
                   </div>
@@ -576,8 +654,10 @@ export default function ManagerDashboard() {
                     </div>
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="text-center">
-                        <div className="text-success text-sm md:text-lg font-bold font-mono">92%</div>
-                        <div className="text-xs text-muted-foreground">On-time</div>
+                        <div className="text-success text-sm md:text-lg font-bold font-mono">
+                          {dashboardData ? ((dashboardData.activeAgents / (dashboardData.totalAgents || 1)) * 100).toFixed(0) : 0}%
+                        </div>
+                        <div className="text-xs text-muted-foreground">Active</div>
                       </div>
                     </div>
                   </div>
@@ -668,7 +748,7 @@ export default function ManagerDashboard() {
                   <div className="flex items-center text-sm">
                     <span className="text-success font-medium">{dashboardData.activeAgents} active</span>
                     <span className="text-muted-foreground ml-1">
-                      • {((dashboardData.activeAgents / dashboardData.totalAgents) * 100).toFixed(0)}% utilization
+                      • {((dashboardData.activeAgents / (dashboardData.totalAgents || 1)) * 100).toFixed(0)}% utilization
                     </span>
                   </div>
                 </>
@@ -684,21 +764,62 @@ export default function ManagerDashboard() {
               <div className="space-y-2">
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Online</span>
-                  <span className="text-success font-medium">18 agents</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">On Break</span>
-                  <span className="text-warning font-medium">4 agents</span>
+                  <span className="text-success font-medium">
+                    {dashboardData ? dashboardData.activeAgents : 0} agents
+                  </span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Offline</span>
-                  <span className="text-muted-foreground font-medium">2 agents</span>
+                  <span className="text-muted-foreground font-medium">
+                    {dashboardData ? (dashboardData.totalAgents - dashboardData.activeAgents) : 0} agents
+                  </span>
                 </div>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Management Actions */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+        <Card className="glass-card hover:shadow-accent transition-all duration-300 cursor-pointer" onClick={() => navigate('/dispositions')}>
+          <CardContent className="p-6 flex items-center space-x-4">
+            <div className="p-3 bg-accent/10 rounded-lg">
+              <Target className="h-6 w-6 text-accent" />
+            </div>
+            <div>
+              <div className="font-medium">Dispositions</div>
+              <div className="text-xs text-muted-foreground">Manage call outcomes</div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="glass-card hover:shadow-accent transition-all duration-300 cursor-pointer" onClick={() => navigate('/tasks')}>
+          <CardContent className="p-6 flex items-center space-x-4">
+            <div className="p-3 bg-accent/10 rounded-lg">
+              <CheckCircle className="h-6 w-6 text-accent" />
+            </div>
+            <div>
+              <div className="font-medium">Team Tasks</div>
+              <div className="text-xs text-muted-foreground">View and assign tasks</div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="glass-card hover:shadow-accent transition-all duration-300 cursor-pointer" onClick={() => navigate('/users')}>
+          <CardContent className="p-6 flex items-center space-x-4">
+            <div className="p-3 bg-accent/10 rounded-lg">
+              <Users className="h-6 w-6 text-accent" />
+            </div>
+            <div>
+              <div className="font-medium">Agents</div>
+              <div className="text-xs text-muted-foreground">Manage team members</div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      </TabsContent>
+      </Tabs>
     </div>
   )
 }

@@ -16,19 +16,6 @@ export enum CallStatus {
   CANCELLED = 'CANCELLED'
 }
 
-export enum CallDisposition {
-  CONTACT_MADE = 'CONTACT_MADE',
-  LEFT_MESSAGE = 'LEFT_MESSAGE',
-  NO_ANSWER = 'NO_ANSWER',
-  BUSY = 'BUSY',
-  WRONG_NUMBER = 'WRONG_NUMBER',
-  DISCONNECTED = 'DISCONNECTED',
-  PROMISE_TO_PAY = 'PROMISE_TO_PAY',
-  PAYMENT_MADE = 'PAYMENT_MADE',
-  CALLBACK_REQUESTED = 'CALLBACK_REQUESTED',
-  DO_NOT_CALL = 'DO_NOT_CALL',
-  DISPUTE = 'DISPUTE'
-}
 
 export class CreateCallDto {
   @ApiProperty({ description: 'Account ID' })
@@ -67,10 +54,10 @@ export class CreateCallDto {
   @IsEnum(CallStatus)
   status: CallStatus;
 
-  @ApiPropertyOptional({ enum: CallDisposition, description: 'Call disposition' })
+  @ApiPropertyOptional({ description: 'Call disposition code' })
   @IsOptional()
-  @IsEnum(CallDisposition)
-  disposition?: CallDisposition;
+  @IsString()
+  disposition?: string;
 
   @ApiPropertyOptional({ description: 'Call notes' })
   @IsOptional()

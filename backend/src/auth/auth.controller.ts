@@ -24,7 +24,7 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private auditService: AuditLoggingService,
-  ) {}
+  ) { }
 
   @ApiOperation({ summary: 'User login' })
   @ApiResponse({ status: 200, description: 'Login successful' })
@@ -58,8 +58,9 @@ export class AuthController {
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/', // Ensure cookie is available for all paths
     });
 
     return {
@@ -78,7 +79,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const refreshToken = req.cookies.refreshToken;
-    
+
     if (!refreshToken) {
       throw new Error('Refresh token not provided');
     }
@@ -119,8 +120,6 @@ export class AuthController {
 
   @ApiOperation({ summary: 'User logout' })
   @ApiResponse({ status: 200, description: 'Logout successful' })
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   async logout(
@@ -128,7 +127,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const refreshToken = req.cookies.refreshToken;
-    
+
     if (refreshToken) {
       await this.authService.logout(refreshToken);
     }
@@ -162,9 +161,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   async getProfile(@Req() req: Request & { user: Omit<User, 'password'> }) {
-    return {
-      user: req.user,
-    };
+    return req.user;
   }
 
   @ApiOperation({ summary: 'Logout from all devices' })

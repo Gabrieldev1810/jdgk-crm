@@ -1,24 +1,26 @@
 import { useState } from "react"
-import { 
-  Home, 
-  Users, 
-  Phone, 
-  FileText, 
-  BarChart3, 
-  Settings, 
+import {
+  Home,
+  Users,
+  Phone,
+  FileText,
+  BarChart3,
+  Settings,
   Shield,
   Headphones,
   Database,
   Upload,
   BookOpen,
-  User,
+  User as UserIcon,
   LogOut,
   Building,
   Mail,
   Calendar,
   MapPin,
   Clock,
-  Bell
+  Bell,
+  Megaphone,
+  Activity
 } from "lucide-react"
 import { NavLink, useLocation } from "react-router-dom"
 import {
@@ -41,6 +43,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator"
 import jdgkLogo from "@/assets/jdgk-logo-new.png"
 
+import { User } from "@/types/api"
+
 interface MenuItem {
   title: string
   url: string
@@ -50,13 +54,17 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: Home, permissions: [] }, // Dashboard is always visible
+  { title: "Agent Workstation", url: "/workstation", icon: Headphones, permissions: ["accounts.view"] },
   { title: "Accounts", url: "/accounts", icon: Users, permissions: ["accounts.view"] },
   { title: "Call Center", url: "/calls", icon: Phone, permissions: ["calls.view"] },
+  { title: "Dialer Monitor", url: "/dialer-monitor", icon: Activity, permissions: ["campaigns.view", "calls.manage"] },
+  { title: "Campaigns", url: "/campaigns", icon: Megaphone, permissions: ["campaigns.view", "campaigns.manage"] },
   { title: "Dispositions", url: "/dispositions", icon: FileText, permissions: ["dispositions.view"] },
   { title: "Upload Data", url: "/upload", icon: Upload, permissions: ["uploads.view", "uploads.create"] },
+  { title: "Tasks", url: "/tasks", icon: Calendar, permissions: [] },
   { title: "Reports", url: "/reports", icon: BarChart3, permissions: ["reports.view"] },
-  { title: "User Management", url: "/users", icon: Shield, permissions: ["users.view", "users.manage"] },
-  { title: "Role Management", url: "/role-management", icon: Shield, permissions: ["roles.view", "roles.manage"] },
+  { title: "User Management", url: "/users", icon: UserIcon, permissions: ["users.view", "users.manage"] },
+  { title: "Roles & Permissions", url: "/roles", icon: Shield, permissions: ["roles.view", "roles.manage"] },
   { title: "Audit Logs", url: "/audit-logs", icon: FileText, permissions: ["audit.view"] },
   { title: "System Settings", url: "/settings", icon: Settings, permissions: ["system.settings"] },
 ]
@@ -70,10 +78,11 @@ interface AppSidebarProps {
   userRole?: string
   userEmail?: string
   userPermissions?: string[]
+  user?: User
   onLogout?: () => void
 }
 
-export function AppSidebar({ userRole = "agent", userEmail = "", userPermissions = [], onLogout }: AppSidebarProps) {
+export function AppSidebar({ userRole = "agent", userEmail = "", userPermissions = [], user, onLogout }: AppSidebarProps) {
   const { state } = useSidebar()
   const location = useLocation()
   const currentPath = location.pathname
@@ -81,59 +90,66 @@ export function AppSidebar({ userRole = "agent", userEmail = "", userPermissions
 
   const isActive = (path: string) => currentPath === path
   const getNavCls = ({ isActive }: { isActive: boolean }) =>
-    isActive 
-      ? "bg-sidebar-accent/50 text-sidebar-foreground font-medium border-l-2 border-sidebar-primary" 
+    isActive
+      ? "bg-sidebar-accent/50 text-sidebar-foreground font-medium border-l-2 border-sidebar-primary"
       : "text-sidebar-foreground/80 hover:bg-sidebar-accent/30 hover:text-sidebar-foreground transition-colors duration-150"
 
   // Filter menu items based on user permissions
-  const normalizedRole = userRole.toLowerCase() // Keep for profile display
   const hasAnyPermission = (requiredPermissions: string[]) => {
+    // Admins see everything
+    if (userRole?.toLowerCase() === 'admin' || userRole?.toLowerCase() === 'super_admin' || userRole?.toLowerCase() === 'administrator') {
+      return true;
+    }
+
     // If no permissions required, item is always visible
     if (requiredPermissions.length === 0) return true;
     // If no user permissions available (loading/error), fallback to role-based for basic access
     if (!userPermissions || userPermissions.length === 0) {
       console.warn('No user permissions available, using role-based fallback');
-      // Basic fallback: show dashboard and accounts to all users
-      return requiredPermissions.includes("accounts.view") || requiredPermissions.includes("calls.view");
+      // Basic fallback: show dashboard and accounts to all users, plus dispositions
+      return requiredPermissions.includes("accounts.view") ||
+        requiredPermissions.includes("calls.view") ||
+        requiredPermissions.includes("dispositions.view");
     }
     // Check if user has at least one of the required permissions
     return requiredPermissions.some(permission => userPermissions.includes(permission));
   };
-  
+
   const filteredMenuItems = menuItems.filter(item => hasAnyPermission(item.permissions))
   const filteredIntegrationItems = integrationItems.filter(item => hasAnyPermission(item.permissions))
   const collapsed = state === "collapsed"
 
   const userInitials = userEmail.split('@')[0].slice(0, 2).toUpperCase()
+  const normalizedRole = userRole ? userRole.toLowerCase() : "";
 
   const getRoleColor = (role: string) => {
-    const normalizedRole = role.toLowerCase()
-    switch (normalizedRole) {
+    const roleLower = role.toLowerCase()
+    switch (roleLower) {
       case "super_admin": return "text-purple-600"
       case "admin": return "text-destructive"
-      case "manager": return "text-warning"  
+      case "manager": return "text-warning"
       case "agent": return "text-success"
       default: return "text-muted-foreground"
     }
   }
 
-  // Dynamic user profile data - should be passed as props or fetched from API
+  // Dynamic user profile data
   const userProfile = {
-    name: userEmail ? userEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : "User",
-    email: userEmail,
-    role: userRole,
-    department: "Collections Department", // TODO: Get from user data
+    name: user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : (userEmail ? userEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : "User"),
+    email: user?.email || userEmail,
+    role: user?.role || userRole,
+    department: user?.department || "Collections Department",
     position: normalizedRole === "super_admin" ? "Super Administrator" :
-              normalizedRole === "admin" ? "System Administrator" : 
-              normalizedRole === "manager" ? "Collections Manager" : "Collections Agent",
-    status: "Active", // TODO: Get from user data
-    lastLogin: "Recently", // TODO: Get from user data
-    phone: null, // TODO: Get from user data
-    location: null, // TODO: Get from user data
-    hireDate: null, // TODO: Get from user data
-    employeeId: null, // TODO: Get from user data
-    manager: normalizedRole !== "super_admin" && normalizedRole !== "admin" ? null : null, // TODO: Get from user data
-    team: null // TODO: Get from user data
+      normalizedRole === "admin" ? "System Administrator" :
+        normalizedRole === "manager" ? "Collections Manager" : "Collections Agent",
+    status: user?.isActive ? "Active" : "Inactive",
+    lastLogin: user?.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString() : "Recently",
+    phone: user?.phoneNumber || "N/A",
+    location: user?.location || "Remote",
+    hireDate: user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : "N/A",
+    employeeId: user?.employeeId || user?.id?.slice(0, 8).toUpperCase() || "N/A",
+    manager: "N/A",
+    team: "General Team"
   }
 
   return (
@@ -144,9 +160,9 @@ export function AppSidebar({ userRole = "agent", userEmail = "", userPermissions
       <SidebarContent className="bg-transparent">
         {/* Logo */}
         <div className="p-4 flex justify-center">
-          <img 
-            src={jdgkLogo} 
-            alt="JDGK Business Solutions" 
+          <img
+            src={jdgkLogo}
+            alt="JDGK Business Solutions"
             className={collapsed ? "h-10 w-auto object-contain" : "h-16 w-auto object-contain"}
           />
         </div>
@@ -162,8 +178,8 @@ export function AppSidebar({ userRole = "agent", userEmail = "", userPermissions
                 const isItemActive = isActive(item.url)
                 return (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton 
-                      asChild 
+                    <SidebarMenuButton
+                      asChild
                       className={`${getNavCls({ isActive: isItemActive })} transition-colors duration-150`}
                     >
                       <NavLink to={item.url} end className="flex items-center space-x-3 px-4 py-2.5 rounded-lg">
@@ -192,8 +208,8 @@ export function AppSidebar({ userRole = "agent", userEmail = "", userPermissions
                   const isItemActive = isActive(item.url)
                   return (
                     <SidebarMenuItem key={item.title}>
-                      <SidebarMenuButton 
-                        asChild 
+                      <SidebarMenuButton
+                        asChild
                         className={`${getNavCls({ isActive: isItemActive })} transition-colors duration-150`}
                       >
                         <NavLink to={item.url} end className="flex items-center space-x-3 px-4 py-2.5 rounded-lg">
@@ -217,8 +233,8 @@ export function AppSidebar({ userRole = "agent", userEmail = "", userPermissions
             <SidebarMenu className="space-y-1 mt-6">
               {/* Documentation */}
               <SidebarMenuItem>
-                <SidebarMenuButton 
-                  asChild 
+                <SidebarMenuButton
+                  asChild
                   className={`${getNavCls({ isActive: isActive("/documentation") })} transition-colors duration-150`}
                 >
                   <NavLink to="/documentation" end className="flex items-center space-x-3 px-4 py-2.5 rounded-lg">
@@ -232,12 +248,12 @@ export function AppSidebar({ userRole = "agent", userEmail = "", userPermissions
 
               {/* Profile */}
               <SidebarMenuItem>
-                <SidebarMenuButton 
+                <SidebarMenuButton
                   className="text-sidebar-foreground/80 hover:bg-sidebar-accent/30 hover:text-sidebar-foreground transition-colors duration-150"
                   onClick={() => setShowProfile(true)}
                 >
                   <div className="flex items-center space-x-3 px-4 py-2.5 rounded-lg w-full">
-                    <User className="w-5 h-5 flex-shrink-0" />
+                    <UserIcon className="w-5 h-5 flex-shrink-0" />
                     {!collapsed && (
                       <span className="font-medium text-sm">Profile</span>
                     )}
@@ -247,7 +263,7 @@ export function AppSidebar({ userRole = "agent", userEmail = "", userPermissions
 
               {/* Logout */}
               <SidebarMenuItem>
-                <SidebarMenuButton 
+                <SidebarMenuButton
                   className="text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors duration-150"
                   onClick={onLogout}
                 >
@@ -269,14 +285,14 @@ export function AppSidebar({ userRole = "agent", userEmail = "", userPermissions
         <DialogContent className="glass-dialog border-glass-border max-w-2xl z-[60] bg-background/95 backdrop-blur-sm">
           <DialogHeader>
             <DialogTitle className="text-foreground flex items-center">
-              <User className="w-5 h-5 mr-2 text-accent" />
+              <UserIcon className="w-5 h-5 mr-2 text-accent" />
               User Profile
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
               View and manage your profile information and company details.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-6 py-4">
             {/* Profile Header */}
             <div className="flex items-center space-x-4 p-4 glass-light rounded-lg">
@@ -309,7 +325,7 @@ export function AppSidebar({ userRole = "agent", userEmail = "", userPermissions
               <Card className="glass-light">
                 <CardHeader>
                   <CardTitle className="text-base flex items-center">
-                    <User className="w-4 h-4 mr-2 text-accent" />
+                    <UserIcon className="w-4 h-4 mr-2 text-accent" />
                     Personal Information
                   </CardTitle>
                 </CardHeader>
@@ -365,7 +381,7 @@ export function AppSidebar({ userRole = "agent", userEmail = "", userPermissions
                     <span className="text-sm text-muted-foreground">{userProfile.department}</span>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <User className="w-4 h-4 text-muted-foreground" />
+                    <UserIcon className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm font-medium text-foreground">Position:</span>
                     <span className="text-sm text-muted-foreground">{userProfile.position}</span>
                   </div>

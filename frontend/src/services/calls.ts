@@ -1,10 +1,10 @@
-import api from '@/lib/api';
-import { 
-  Call, 
-  CreateCallRequest, 
-  UpdateCallRequest, 
-  CallSearchParams, 
-  CallStatistics 
+import { api } from './api';
+import {
+  Call,
+  CreateCallRequest,
+  UpdateCallRequest,
+  CallSearchParams,
+  CallStatistics
 } from '@/types/api';
 
 export class CallsService {
@@ -50,7 +50,7 @@ export class CallsService {
   }
 
   async deleteCall(id: string): Promise<void> {
-    await api.delete<{message: string, id: string}>(`${this.baseUrl}/${id}`);
+    await api.delete<{ message: string, id: string }>(`${this.baseUrl}/${id}`);
   }
 
   // ================================
@@ -91,7 +91,7 @@ export class CallsService {
   // ================================
   formatDuration(seconds?: number): string {
     if (!seconds) return '0:00';
-    
+
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
@@ -99,7 +99,7 @@ export class CallsService {
 
   getDispositionDisplay(disposition?: string): string {
     if (!disposition) return 'No Disposition';
-    
+
     const dispositionMap: Record<string, string> = {
       CONTACT_MADE: 'Contact Made',
       LEFT_MESSAGE: 'Left Message',
@@ -113,7 +113,7 @@ export class CallsService {
       DO_NOT_CALL: 'Do Not Call',
       DISPUTE: 'Dispute'
     };
-    
+
     return dispositionMap[disposition] || disposition;
   }
 
@@ -127,7 +127,7 @@ export class CallsService {
       NO_ANSWER: 'No Answer',
       CANCELLED: 'Cancelled'
     };
-    
+
     return statusMap[status] || status;
   }
 
@@ -141,13 +141,13 @@ export class CallsService {
       NO_ANSWER: 'text-gray-600',
       CANCELLED: 'text-gray-500'
     };
-    
+
     return colorMap[status] || 'text-gray-600';
   }
 
   getDispositionColor(disposition?: string): string {
     if (!disposition) return 'text-gray-600';
-    
+
     const colorMap: Record<string, string> = {
       CONTACT_MADE: 'text-green-600',
       PROMISE_TO_PAY: 'text-blue-600',
@@ -161,7 +161,7 @@ export class CallsService {
       DO_NOT_CALL: 'text-red-700',
       DISPUTE: 'text-red-800'
     };
-    
+
     return colorMap[disposition] || 'text-gray-600';
   }
 

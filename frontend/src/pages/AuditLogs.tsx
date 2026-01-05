@@ -7,6 +7,7 @@ import {
   FileText, 
   Search, 
   Shield, 
+  ShieldAlert,
   UserPlus, 
   UserMinus, 
   Edit, 
@@ -51,6 +52,7 @@ const actionIcons = {
   "Attempted Privilege Escalation": Shield,
   "Failed Role Assignment": Shield,
   "Permission Cache Invalidated": Settings,
+  "SECURITY_EVENT_UNAUTHORIZED_ACCESS": ShieldAlert,
 }
 
 export default function AuditLogs() {
@@ -165,6 +167,7 @@ export default function AuditLogs() {
                 <SelectItem value="permission">Permissions</SelectItem>
                 <SelectItem value="user_role">User Roles</SelectItem>
                 <SelectItem value="settings">Settings</SelectItem>
+                <SelectItem value="SECURITY">Security</SelectItem>
               </SelectContent>
             </Select>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
@@ -236,9 +239,22 @@ export default function AuditLogs() {
                               </p>
                             )}
 
-                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                              {log.ipAddress && <span>IP: {log.ipAddress}</span>}
-                              {log.sessionId && <span>Session: {log.sessionId.slice(0, 8)}...</span>}
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                              {log.ipAddress && (
+                                <span className="flex items-center gap-1">
+                                  <span className="font-medium">IP:</span> {log.ipAddress}
+                                </span>
+                              )}
+                              {log.userAgent && (
+                                <span className="flex items-center gap-1" title={log.userAgent}>
+                                  <span className="font-medium">Device:</span> {log.userAgent.length > 30 ? log.userAgent.substring(0, 30) + '...' : log.userAgent}
+                                </span>
+                              )}
+                              {log.sessionId && (
+                                <span className="flex items-center gap-1">
+                                  <span className="font-medium">Session:</span> {log.sessionId.slice(0, 8)}...
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>

@@ -20,19 +20,37 @@ dial-craft/
 
 ## 🚀 Quick Start
 
-### Option 1: Use the Startup Script (Recommended)
-```powershell
-# Run this PowerShell script to start everything
-.\start-crm.ps1
+### Prerequisites
+- Node.js (v18 or higher)
+- npm (v9 or higher)
+- PostgreSQL database
+
+### Initial Setup
+```bash
+# Install all dependencies (first time only)
+npm run install:all
+
+# Or install root dependencies and run workspaces
+npm install
 ```
 
-### Option 2: Manual Start
+### Development Mode (Recommended)
+```bash
+# Start both backend and frontend with one command
+npm run dev
+```
+
+This will run:
+- **Backend API** on `http://localhost:3000`
+- **Frontend UI** on `http://localhost:8081` (or next available port)
+
+### Alternative: Manual Start
 ```bash
 # Terminal 1: Start Backend
 cd backend
 npm run start:dev
 
-# Terminal 2: Start Frontend (Main CRM)
+# Terminal 2: Start Frontend
 cd frontend
 npm run dev
 ```
@@ -86,6 +104,27 @@ The system includes 13 permissions across 6 categories:
 - **API Integration**: All services use the centralized API client
 - **RBAC**: Comprehensive role and permission system implemented
 
+## 📦 Available Commands
+
+### Root Level Commands
+- `npm run dev` - Start both backend and frontend in development mode
+- `npm run build` - Build both projects for production
+- `npm run start` - Start both projects in production mode
+- `npm run install:all` - Install all dependencies
+- `npm run db:migrate` - Run database migrations
+- `npm run db:seed` - Seed the database
+- `npm run db:studio` - Open Prisma Studio
+- `npm run lint` - Lint both projects
+- `npm run clean` - Clean all build artifacts and node_modules
+
+### Backend Only
+- `npm run dev:backend` - Start backend only
+- `npm run build:backend` - Build backend only
+
+### Frontend Only
+- `npm run dev:frontend` - Start frontend only
+- `npm run build:frontend` - Build frontend only
+
 ## 🐛 Troubleshooting
 
 ### Port Issues
@@ -96,3 +135,12 @@ The RBAC system uses the main API client - no direct fetch calls.
 
 ### Authentication
 Login with your assigned credentials. The system supports JWT tokens with refresh capabilities.
+
+### First Time Setup
+If you encounter issues, try:
+```bash
+npm run clean
+npm run install:all
+npm run db:generate
+npm run dev
+```

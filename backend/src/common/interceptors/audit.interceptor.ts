@@ -23,8 +23,7 @@ export interface AuditConfig {
 /**
  * Decorator to configure audit logging for specific endpoints
  */
-export const AuditLog = (config: AuditConfig) =>
-  Reflector.createDecorator<AuditConfig>()(config);
+export const AuditLog = Reflector.createDecorator<AuditConfig>();
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -34,10 +33,7 @@ export class AuditInterceptor implements NestInterceptor {
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const auditConfig = this.reflector.get<AuditConfig>(
-      AUDIT_LOG_KEY,
-      context.getHandler(),
-    );
+    const auditConfig = this.reflector.get(AuditLog, context.getHandler());
 
     // Skip audit logging if not configured for this endpoint
     if (!auditConfig) {

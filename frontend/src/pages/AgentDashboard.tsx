@@ -15,6 +15,9 @@ import {
 } from "lucide-react"
 import { dashboardService, DashboardMetrics, AgentPerformance } from "@/services/dashboard"
 import { auth } from "@/services/auth"
+import { useNavigate } from "react-router-dom"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { RealtimeReport } from "@/components/vicidial/RealtimeReport"
 
 interface AgentKPICardProps {
   title: string
@@ -99,6 +102,7 @@ function AgentKPICard({ title, value, target, progress, change, changeType, icon
 }
 
 export default function AgentDashboard() {
+  const navigate = useNavigate()
   const [currentTime, setCurrentTime] = useState(new Date())
   const [dashboardData, setDashboardData] = useState<DashboardMetrics | null>(null)
   const [currentAgent, setCurrentAgent] = useState<AgentPerformance | null>(null)
@@ -128,13 +132,16 @@ export default function AgentDashboard() {
         const data = await dashboardService.getDashboardMetrics()
         setDashboardData(data)
         
-        // Find current agent in the agent performance data
-        const agent = data.topAgents.find(a => 
+        // Get all agents performance to find current agent
+        const allAgents = await dashboardService.getAgentPerformance()
+        
+        // Find current agent
+        const agent = allAgents.find(a => 
           a.email === user.email || 
           a.name === `${user.firstName} ${user.lastName}`
         )
         
-        // If not in top agents, create agent data from user
+        // If not found, create agent data from user with zero values (not mock)
         if (agent) {
           setCurrentAgent(agent)
         } else {
@@ -142,11 +149,11 @@ export default function AgentDashboard() {
             id: user.id,
             name: `${user.firstName} ${user.lastName}`,
             email: user.email,
-            callsToday: Math.floor(Math.random() * 30) + 20, // Mock for now
-            totalCalls: Math.floor(Math.random() * 200) + 100, // Mock for now
-            collections: Math.floor(Math.random() * 20000) + 5000, // Mock for now
-            contactRate: Math.floor(Math.random() * 20) + 65, // Mock for now
-            avgCallDuration: Math.floor(Math.random() * 100) + 150, // Mock for now
+            callsToday: 0,
+            totalCalls: 0,
+            collections: 0,
+            contactRate: 0,
+            avgCallDuration: 0,
           })
         }
       } catch (err) {
@@ -270,7 +277,10 @@ export default function AgentDashboard() {
               <CheckCircle className="w-3 h-3 mr-1" />
               Online
             </Badge>
-            <Button className="bg-gradient-accent hover:shadow-accent">
+            <Button 
+              className="bg-gradient-accent hover:shadow-accent"
+              onClick={() => navigate('/workstation')}
+            >
               <PhoneCall className="w-4 h-4 mr-2" />
               Start Dialing
             </Button>
@@ -278,8 +288,15 @@ export default function AgentDashboard() {
         </div>
       </div>
       
-      {/* Agent KPI Cards */}
-      {loading ? (
+      <Tabs defaultValue="overview" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="realtime">Real-time Report</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-6">
+          {/* Agent KPI Cards */}
+          {loading ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
             <Card key={i} className="glass-card animate-pulse">
@@ -336,23 +353,23 @@ export default function AgentDashboard() {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span>Accounts to Contact</span>
-                <span className="font-mono">47/75</span>
+                <span className="font-mono">{currentAgent ? Math.floor(currentAgent.callsToday * 0.7) : 0}/40</span>
               </div>
-              <Progress value={63} className="h-2" />
+              <Progress value={currentAgent ? Math.min((Math.floor(currentAgent.callsToday * 0.7) / 40) * 100, 100) : 0} className="h-2" />
             </div>
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span>Call Target</span>
-                <span className="font-mono">32/50</span>
+                <span className="font-mono">{currentAgent ? currentAgent.callsToday : 0}/60</span>
               </div>
-              <Progress value={64} className="h-2" />
+              <Progress value={currentAgent ? Math.min((currentAgent.callsToday / 60) * 100, 100) : 0} className="h-2" />
             </div>
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span>Collection Goal</span>
-                <span className="font-mono">$2,450/$3,000</span>
+                <span className="font-mono">${currentAgent ? currentAgent.collections.toLocaleString() : 0}/$15,000</span>
               </div>
-              <Progress value={82} className="h-2" />
+              <Progress value={currentAgent ? Math.min((currentAgent.collections / 15000) * 100, 100) : 0} className="h-2" />
             </div>
           </CardContent>
         </Card>
@@ -369,26 +386,8 @@ export default function AgentDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3 text-sm">
-              <div className="flex items-center justify-between p-2 bg-success/5 rounded">
-                <div className="flex items-center space-x-2">
-                  <span>💰</span>
-                  <span>John Smith - Collected</span>
-                </div>
-                <span className="text-success font-mono">$1,200</span>
-              </div>
-              <div className="flex items-center justify-between p-2 bg-warning/5 rounded">
-                <div className="flex items-center space-x-2">
-                  <span>✅</span>
-                  <span>Sarah Johnson - PTP</span>
-                </div>
-                <span className="text-warning font-mono">Jan 20</span>
-              </div>
-              <div className="flex items-center justify-between p-2 bg-muted/5 rounded">
-                <div className="flex items-center space-x-2">
-                  <span>📞</span>
-                  <span>Mike Brown - No Answer</span>
-                </div>
-                <span className="text-muted-foreground font-mono">10:45 AM</span>
+              <div className="text-center text-muted-foreground py-4">
+                No recent activity
               </div>
             </div>
           </CardContent>
@@ -405,22 +404,18 @@ export default function AgentDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <div className="font-semibold text-foreground">Emily Davis</div>
-              <div className="text-sm text-muted-foreground">ACC-004</div>
-              <div className="font-mono text-sm">$3,200.00</div>
-              <div className="text-xs text-destructive">Due: Jan 25, 2024</div>
-              <Badge variant="secondary" className="text-xs">
-                🔴 Untouched
-              </Badge>
+            <div className="text-center text-muted-foreground py-4">
+              No account scheduled
             </div>
-            <Button className="w-full bg-gradient-accent hover:shadow-accent">
-              <Phone className="w-4 h-4 mr-2" />
-              Call Now
-            </Button>
           </CardContent>
         </Card>
       </div>
+      </TabsContent>
+
+      <TabsContent value="realtime">
+        <RealtimeReport />
+      </TabsContent>
+      </Tabs>
     </div>
   )
 }

@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLoggingService } from './services/audit-logging.service';
 import { PermissionCacheService } from './services/permission-cache.service';
 import { RateLimitingService } from './services/rate-limiting.service';
+import { SecuritySettingsService } from './services/security-settings.service';
 import { JwtService } from '@nestjs/jwt';
 
 @Global()
@@ -18,6 +19,7 @@ import { JwtService } from '@nestjs/jwt';
     MultiFactorAuthService,
     DataEncryptionService,
     SessionSecurityService,
+    SecuritySettingsService,
     
     // Enhanced Guards
     EnhancedPermissionsGuard,
@@ -35,6 +37,8 @@ import { JwtService } from '@nestjs/jwt';
     DataEncryptionService,
     SessionSecurityService,
     EnhancedPermissionsGuard,
+    SecuritySettingsService,
+    AuditLoggingService,
   ],
 })
 export class Phase4SecurityModule {}

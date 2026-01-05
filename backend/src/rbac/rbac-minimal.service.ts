@@ -41,15 +41,31 @@ export class RbacMinimalService {
 
       // Create basic permissions
       const permissions = [
-        { code: 'accounts.view', name: 'View Accounts', category: 'Account Management', resource: 'accounts', action: 'view' },
-        { code: 'accounts.create', name: 'Create Account', category: 'Account Management', resource: 'accounts', action: 'create' },
+        { code: 'accounts.view', name: 'View Accounts', category: 'Account Management', resource: 'accounts', action: 'view' },        { code: 'accounts.view_all', name: 'View All Accounts', category: 'Account Management', resource: 'accounts', action: 'view_all' },
+        { code: 'accounts.view_team', name: 'View Team Accounts', category: 'Account Management', resource: 'accounts', action: 'view_team' },        { code: 'accounts.create', name: 'Create Account', category: 'Account Management', resource: 'accounts', action: 'create' },
         { code: 'accounts.update', name: 'Update Account', category: 'Account Management', resource: 'accounts', action: 'update' },
         { code: 'calls.view', name: 'View Calls', category: 'Call Management', resource: 'calls', action: 'view' },
         { code: 'calls.create', name: 'Create Call', category: 'Call Management', resource: 'calls', action: 'create' },
+        { code: 'campaigns.view', name: 'View Campaigns', category: 'Campaign Management', resource: 'campaigns', action: 'view' },
+        { code: 'campaigns.manage', name: 'Manage Campaigns', category: 'Campaign Management', resource: 'campaigns', action: 'manage' },
         { code: 'users.view', name: 'View Users', category: 'User Management', resource: 'users', action: 'view' },
+        { code: 'users.view_all', name: 'View All Users', category: 'User Management', resource: 'users', action: 'view_all' },
+        { code: 'users.view_team', name: 'View Team Users', category: 'User Management', resource: 'users', action: 'view_team' },
+        { code: 'users.create', name: 'Create User', category: 'User Management', resource: 'users', action: 'create' },
+        { code: 'users.update', name: 'Update User', category: 'User Management', resource: 'users', action: 'update' },
+        { code: 'users.delete', name: 'Delete User', category: 'User Management', resource: 'users', action: 'delete' },
         { code: 'users.manage', name: 'Manage Users', category: 'User Management', resource: 'users', action: 'manage' },
         { code: 'system.admin', name: 'System Administration', category: 'System', resource: 'system', action: 'admin', isSystem: true },
         
+        // Task Management permissions
+        { code: 'tasks.view', name: 'View Tasks', category: 'Task Management', resource: 'tasks', action: 'view' },
+        { code: 'tasks.view_all', name: 'View All Tasks', category: 'Task Management', resource: 'tasks', action: 'view_all' },
+        { code: 'tasks.view_team', name: 'View Team Tasks', category: 'Task Management', resource: 'tasks', action: 'view_team' },
+        { code: 'tasks.create', name: 'Create Task', category: 'Task Management', resource: 'tasks', action: 'create' },
+        { code: 'tasks.update', name: 'Update Task', category: 'Task Management', resource: 'tasks', action: 'update' },
+        { code: 'tasks.delete', name: 'Delete Task', category: 'Task Management', resource: 'tasks', action: 'delete' },
+        { code: 'tasks.manage', name: 'Manage Tasks', category: 'Task Management', resource: 'tasks', action: 'manage' },
+
         // Dispositions permissions
         { code: 'dispositions.view', name: 'View Dispositions', category: 'Dispositions', resource: 'dispositions', action: 'view' },
         { code: 'dispositions.create', name: 'Create Disposition', category: 'Dispositions', resource: 'dispositions', action: 'create' },
@@ -64,6 +80,8 @@ export class RbacMinimalService {
         
         // Reports and Audit Logs permissions
         { code: 'reports.view', name: 'View Reports', category: 'Reports and Audit Logs', resource: 'reports', action: 'view' },
+        { code: 'reports.view_all', name: 'View All Reports', category: 'Reports and Audit Logs', resource: 'reports', action: 'view_all' },
+        { code: 'reports.view_team', name: 'View Team Reports', category: 'Reports and Audit Logs', resource: 'reports', action: 'view_team' },
         { code: 'reports.create', name: 'Create Reports', category: 'Reports and Audit Logs', resource: 'reports', action: 'create' },
         { code: 'reports.export', name: 'Export Reports', category: 'Reports and Audit Logs', resource: 'reports', action: 'export' },
         { code: 'audit.view', name: 'View Audit Logs', category: 'Reports and Audit Logs', resource: 'audit', action: 'view' },
@@ -104,15 +122,81 @@ export class RbacMinimalService {
         }
       }
 
+      // Assign default permissions to roles
+      await this.assignDefaultPermissions();
+
       return {
         roles: createdRoles.length,
         permissions: createdPermissions.length,
         message: `Seeded ${createdRoles.length} roles and ${createdPermissions.length} permissions`,
       };
-
     } catch (error) {
       this.logger.error(`Failed to seed basic roles: ${error.message}`, error.stack);
       throw error;
+    }
+  }
+
+  private async assignDefaultPermissions() {
+    const roles = await this.prisma.role.findMany();
+    const permissions = await this.prisma.permission.findMany();
+
+    for (const role of roles) {
+      let rolePermissions: string[] = [];
+
+      if (role.name === 'Administrator') {
+        // Admin gets everything
+        rolePermissions = permissions.map(p => p.code);
+      } else if (role.name === 'Manager') {
+        // Manager gets view_team, create, update, delete for most resources
+        rolePermissions = permissions
+          .filter(p => 
+            (p.code.includes('view_team') || 
+             p.code.includes('create') || 
+             p.code.includes('update') || 
+             p.code.includes('delete') ||
+             p.code.includes('view')) &&
+            !p.code.includes('system') &&
+            !p.code.includes('roles') &&
+            !p.code.includes('rbac') &&
+            !p.code.includes('integrations')
+          )
+          .map(p => p.code);
+          
+          // Add specific manage permissions if needed
+          rolePermissions.push('users.manage'); // Managers can manage users (with restrictions in service)
+      } else if (role.name === 'Agent') {
+        // Agent gets basic view and create/update for their work
+        rolePermissions = [
+          'tasks.view', 'tasks.update',
+          'accounts.view', 'accounts.update',
+          'uploads.view',
+          'reports.view'
+        ];
+      }
+
+      // Assign permissions
+      for (const code of rolePermissions) {
+        const permission = permissions.find(p => p.code === code);
+        if (permission) {
+          const existing = await this.prisma.rolePermission.findUnique({
+            where: {
+              roleId_permissionId: {
+                roleId: role.id,
+                permissionId: permission.id
+              }
+            }
+          });
+
+          if (!existing) {
+            await this.prisma.rolePermission.create({
+              data: {
+                roleId: role.id,
+                permissionId: permission.id
+              }
+            });
+          }
+        }
+      }
     }
   }
 
@@ -393,8 +477,7 @@ export class RbacMinimalService {
    */
   async updateRole(id: string, data: { name?: string; description?: string; isActive?: boolean; permissions?: string[] }) {
     try {
-      // For now, use a simplified approach without permissions update
-      // The main issue is the user needs admin permissions immediately
+      // Update role details
       const role = await this.prisma.role.update({
         where: { id },
         data: {
@@ -402,6 +485,29 @@ export class RbacMinimalService {
           description: data.description,
           isActive: data.isActive,
         },
+      });
+
+      // Update permissions if provided
+      if (data.permissions) {
+        // Delete existing permissions
+        await this.prisma.rolePermission.deleteMany({
+          where: { roleId: id },
+        });
+
+        // Create new permissions
+        if (data.permissions.length > 0) {
+          await this.prisma.rolePermission.createMany({
+            data: data.permissions.map(permissionId => ({
+              roleId: id,
+              permissionId,
+            })),
+          });
+        }
+      }
+
+      // Fetch the updated role with permissions and counts
+      const updatedRole = await this.prisma.role.findUnique({
+        where: { id },
         include: {
           permissions: {
             include: {
@@ -419,12 +525,17 @@ export class RbacMinimalService {
 
       // Transform the result to match frontend expectations
       const transformedRole = {
-        ...role,
-        permissions: role.permissions.map(rp => rp.permission),
-        userCount: role._count.userRoles,
+        ...updatedRole,
+        permissions: updatedRole.permissions.map(rp => rp.permission),
+        userCount: updatedRole._count.userRoles,
       };
 
-      this.logger.log(`Updated role: ${transformedRole.name} (permissions update not implemented yet)`);
+      // Clear all cache since we updated a role (affects all users with this role)
+      if (this.permissionCache) {
+        await this.permissionCache.clearAllCache();
+      }
+
+      this.logger.log(`Updated role: ${transformedRole.name} with ${data.permissions?.length || 0} permissions`);
       return transformedRole;
     } catch (error) {
       this.logger.error(`Failed to update role: ${error.message}`, error.stack);

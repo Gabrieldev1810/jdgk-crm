@@ -101,11 +101,14 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, document);
   
   const port = configService.get('PORT') || 3000;
-  // Listen on all interfaces for better Windows compatibility
-  await app.listen(port);
+  // Listen on all interfaces (0.0.0.0) for LAN network access
+  await app.listen(port, '0.0.0.0');
   
-  console.log(`🚀 Dial-Craft CRM Backend running on: http://localhost:${port}`);
-  console.log(`📚 API Documentation: http://localhost:${port}/api/docs`);
+  console.log(`🚀 Dial-Craft CRM Backend running on port ${port}`);
+  console.log(`✅ Listening on all interfaces: 0.0.0.0:${port}`);
+  console.log(`  Local access: http://localhost:${port}`);
+  console.log(`  LAN access: http://192.168.1.52:${port}`);
+  console.log(`📚 API Documentation: http://localhost:${port}/docs`);
 }
 
 bootstrap();

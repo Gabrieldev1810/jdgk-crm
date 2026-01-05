@@ -1,8 +1,12 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
+import { vicidialService, VicidialCampaign } from "@/services/vicidial"
+import { accountService } from "@/services/accounts"
 import { 
   Upload, 
   FileSpreadsheet,
@@ -53,6 +57,20 @@ export default function UploadData() {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [campaigns, setCampaigns] = useState<VicidialCampaign[]>([])
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>("")
+
+  useEffect(() => {
+    const fetchCampaigns = async () => {
+      try {
+        const data = await vicidialService.getCampaigns()
+        setCampaigns(data)
+      } catch (error) {
+        console.error("Failed to fetch campaigns", error)
+      }
+    }
+    fetchCampaigns()
+  }, [])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -73,9 +91,9 @@ export default function UploadData() {
   }, [])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    console.log('Files selected:', files);
-    setSelectedFiles(files)
+    if (e.target.files && e.target.files.length > 0) {
+      setSelectedFiles(Array.from(e.target.files))
+    }
   }
 
   const removeFile = (index: number) => {
@@ -92,43 +110,60 @@ export default function UploadData() {
     setIsUploading(true)
     setUploadProgress(0)
 
-    // Simulate upload progress
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 95) {
-          clearInterval(interval)
-          return 95
-        }
-        return prev + Math.random() * 10
-      })
-    }, 200)
+    try {
+      // Simulate progress for UX
+      const interval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) return 90
+          return prev + 10
+        })
+      }, 500)
 
-    // Simulate processing
-    setTimeout(() => {
+      const file = selectedFiles[0]
+      const response = await accountService.bulkUpload({
+        file,
+        campaignId: selectedCampaignId || undefined
+      })
+
       clearInterval(interval)
       setUploadProgress(100)
-      
-      // Add to history
-      const newUpload: UploadHistory = {
-        id: `UP-${Date.now()}`,
-        filename: selectedFiles[0].name,
-        uploadDate: new Date().toLocaleString(),
-        status: "success",
-        totalRows: Math.floor(Math.random() * 1000) + 100,
-        successRows: Math.floor(Math.random() * 950) + 50,
-        errorRows: Math.floor(Math.random() * 50),
-        uploader: "current@user.com"
-      }
-      newUpload.successRows = newUpload.totalRows - newUpload.errorRows
 
-      setUploadHistory(prev => [newUpload, ...prev])
+      // Handle both wrapper response and direct result
+      const result = response.data || response as any
       
-      setTimeout(() => {
-        setIsUploading(false)
-        setUploadProgress(0)
-        setSelectedFiles([])
-      }, 1000)
-    }, 3000)
+      if (response.success && result) {
+        // Add to history
+        const newUpload: UploadHistory = {
+          id: result.batchId || `UP-${Date.now()}`,
+          filename: file.name,
+          uploadDate: new Date().toLocaleString(),
+          status: result.failedRecords > 0 ? "error" : "success",
+          totalRows: result.totalRecords,
+          successRows: result.successfulRecords,
+          errorRows: result.failedRecords,
+          uploader: "Current User" // Ideally get from auth context
+        }
+        setUploadHistory(prev => [newUpload, ...prev])
+        
+        if (result.failedRecords > 0) {
+          // Show detailed errors
+          const errorMessages = result.errors.map((e: any) => `Row ${e.row}: ${e.message}`).join('\n');
+          alert(`Upload completed with ${result.successfulRecords} successful records and ${result.failedRecords} errors.\n\nErrors:\n${errorMessages.substring(0, 500)}${errorMessages.length > 500 ? '...' : ''}`)
+        } else {
+          alert(`Upload successful! ${result.successfulRecords} records imported.`)
+        }
+      } else {
+        console.error('Upload response error:', response);
+        alert(`Upload failed: ${response.message || 'Unknown error'}`)
+      }
+    } catch (error: any) {
+      console.error('Upload failed:', error)
+      alert(`Upload failed: ${error.message || 'Please check the console for details.'}`)
+    } finally {
+      setIsUploading(false)
+      setUploadProgress(0)
+      setSelectedFiles([])
+    }
   }
 
   const formatFileSize = (bytes: number) => {
@@ -143,30 +178,50 @@ export default function UploadData() {
     console.log('Template download started');
     // Create CSV content with the exact format from the JDGK CRM template
     const headers = [
-      'Account NUMBER',
-      'Banks',
-      'REGION_Branch Name',
-      'ACCNT Name',
+      'Account Number',
+      'Name',
+      'Email',
       'Address',
-      'Released Date',
-      'Loan Availed',
-      'Product',
-      'Last Payment date',
-      'Principal Balance',
-      'OUTSTANDING BALANCE',
-      'Contact Info',
-      'TELE',
-      'STATUS',
-      'PAYMENT AMOUNT',
-      'REMARKS'
+      'Original Amount',
+      'Out Standing Balance (OSB)',
+      'Bank Partner',
+      'Status',
+      'Phone Numbers',
+      'Assigned Agent',
+      'Last Contact',
+      'Remarks'
     ]
     
     // Create template data with placeholders - no hardcoded real data
     const sampleData = [
-      // Generate example rows with placeholder data
-      headers.map((header, index) => `Example${index + 1}`),
-      headers.map((header, index) => `Sample${index + 1}`),
-      headers.map((header, index) => `Template${index + 1}`)
+      [
+        'ACC001',
+        'John Doe',
+        'john.doe@email.com',
+        '123 Main St, New York, NY',
+        '1000.00',
+        '850.00',
+        'Chase',
+        'NEW',
+        '555-0101',
+        'Agent Smith',
+        '2023-01-01',
+        'Customer promised to pay'
+      ],
+      [
+        'ACC002',
+        'Jane Smith',
+        'jane.smith@email.com',
+        '456 Oak Ave, Los Angeles, CA',
+        '2500.00',
+        '2200.00',
+        'Amex',
+        'NEW',
+        '555-0102',
+        '',
+        '2023-01-02',
+        'Call back later'
+      ]
     ]
     
     // Convert to CSV format with proper escaping
@@ -383,18 +438,34 @@ export default function UploadData() {
                       </div>
                     ))}
                   </div>
-                  
+
                   <div className="flex items-center justify-between pt-4 border-t border-glass-border">
-                    <div className="text-xs text-muted-foreground">
-                      Required columns: Account ID, Name, Phone Numbers, Balance, Due Date, Bank Partner
+                    <div className="flex-1 mr-4">
+                      <Label htmlFor="campaign-select" className="mb-2 block text-xs text-muted-foreground">Target Campaign (Optional)</Label>
+                      <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
+                        <SelectTrigger id="campaign-select" className="w-full glass-light border-glass-border">
+                          <SelectValue placeholder="Select Campaign" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No Campaign</SelectItem>
+                          {campaigns.map(c => (
+                            <SelectItem key={c.campaign_id} value={c.campaign_id}>{c.campaign_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <Button 
-                      onClick={handleFileUpload}
-                      className="bg-gradient-accent hover:shadow-accent"
-                    >
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload Files
-                    </Button>
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="text-xs text-muted-foreground">
+                        Required columns: Account ID, Name, Phone Numbers, Balance
+                      </div>
+                      <Button 
+                        onClick={handleFileUpload}
+                        className="bg-gradient-accent hover:shadow-accent"
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Upload Files
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -462,7 +533,7 @@ export default function UploadData() {
                   <CheckCircle className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
                   <div className="text-sm">
                     <div className="font-medium">JDGK CRM Format</div>
-                    <div className="text-muted-foreground">Account NUMBER, Banks, REGION_Branch Name, ACCNT Name, Address</div>
+                    <div className="text-muted-foreground">Account Number, Name, Email, Address, Phone Numbers</div>
                   </div>
                 </div>
                 
@@ -470,7 +541,7 @@ export default function UploadData() {
                   <CheckCircle className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
                   <div className="text-sm">
                     <div className="font-medium">Financial Data</div>
-                    <div className="text-muted-foreground">Principal Balance, Outstanding Balance, Payment Amount, Status</div>
+                    <div className="text-muted-foreground">Original Amount, Out Standing Balance (OSB), Bank Partner, Status</div>
                   </div>
                 </div>
               </div>

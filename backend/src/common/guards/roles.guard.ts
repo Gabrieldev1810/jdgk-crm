@@ -4,7 +4,7 @@ import { ROLES_KEY } from '../decorators/roles.decorator';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(private reflector: Reflector) { }
 
   canActivate(context: ExecutionContext): boolean {
     const requiredRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
@@ -17,6 +17,10 @@ export class RolesGuard implements CanActivate {
     }
 
     const { user } = context.switchToHttp().getRequest();
-    return requiredRoles.some((role) => user?.role === role);
+
+    // Normalize user role (handle ADMINISTRATOR -> ADMIN mismatch)
+    const userRole = user?.role?.toUpperCase() === 'ADMINISTRATOR' ? 'ADMIN' : user?.role?.toUpperCase();
+
+    return requiredRoles.some((role) => userRole === role.toUpperCase());
   }
 }

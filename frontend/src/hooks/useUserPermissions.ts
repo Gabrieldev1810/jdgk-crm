@@ -25,11 +25,10 @@ export function useUserPermissions(userId: string | null) {
     const fetchPermissions = async () => {
       setIsLoading(true);
       setError(null);
-      
+
       try {
-        console.log(`🔑 Fetching permissions for user: ${userId}`);
+
         const userPermissions = await usersService.getUserPermissions(userId);
-        console.log(`✅ Loaded ${userPermissions.length} permissions:`, userPermissions.map(p => p.code));
         setPermissions(userPermissions);
       } catch (err) {
         console.error('❌ Failed to fetch user permissions:', err);
@@ -72,7 +71,7 @@ export function useUserPermissions(userId: string | null) {
         const fetchPermissions = async () => {
           setIsLoading(true);
           setError(null);
-          
+
           try {
             const userPermissions = await usersService.getUserPermissions(userId);
             setPermissions(userPermissions);

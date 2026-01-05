@@ -19,12 +19,17 @@ import Dispositions from "./pages/Dispositions";
 import UploadData from "./pages/UploadData";
 import Reports from "./pages/Reports";
 import UserManagement from "./pages/UserManagement";
-import RoleManagement from "./pages/RoleManagement";
+import Roles from "./pages/Roles";
 import AuditLogs from "./pages/AuditLogs";
 import Settings from "./pages/Settings";
 import Documentation from "./pages/Documentation";
 import ThreeCXStatus from "./pages/integrations/ThreeCXStatus";
 import DatabaseIntegration from "./pages/integrations/Database";
+import DialerMonitor from "./pages/DialerMonitor";
+import Campaigns from "./pages/Campaigns";
+import DialerPop from "./pages/DialerPop";
+import AgentWorkstation from "./pages/AgentWorkstation";
+import { TasksPage } from "./pages/TasksPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -111,6 +116,7 @@ const App = () => {
                 userEmail={user.email} 
                 userRole={user.role}
                 userPermissions={userPermissions.map(p => p.code)}
+                user={user}
                 onLogout={handleLogout}
               >
                 <Routes>
@@ -123,13 +129,18 @@ const App = () => {
                   <Route path="/dispositions" element={<Dispositions />} />
                   <Route path="/upload" element={<UploadData />} />
                   <Route path="/reports" element={<Reports />} />
+                  <Route path="/tasks" element={<TasksPage />} />
                   <Route path="/users" element={<UserManagement />} />
-                  <Route path="/role-management" element={<RoleManagement />} />
+                  <Route path="/roles" element={<Roles />} />
                   <Route path="/audit-logs" element={<AuditLogs />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/documentation" element={<Documentation />} />
                   <Route path="/integrations/3cx" element={<ThreeCXStatus />} />
                   <Route path="/integrations/database" element={<DatabaseIntegration />} />
+                  <Route path="/dialer-monitor" element={<DialerMonitor />} />
+                  <Route path="/campaigns" element={<Campaigns />} />
+                  <Route path="/dialer-pop" element={<DialerPop />} />
+                  <Route path="/workstation" element={<AgentWorkstation />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </AppLayout>

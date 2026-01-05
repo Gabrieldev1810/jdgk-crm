@@ -17,6 +17,7 @@ export interface User {
     description: string;
     isActive: boolean;
   }>;
+  vicidialUserId?: string;
 }
 
 export interface CreateUserDto {
@@ -25,7 +26,9 @@ export interface CreateUserDto {
   firstName: string;
   lastName: string;
   roleIds?: string[];
+  role?: string;
   isActive?: boolean;
+  vicidialUserId?: string;
 }
 
 export interface UpdateUserDto {
@@ -33,7 +36,9 @@ export interface UpdateUserDto {
   password?: string;
   firstName?: string;
   lastName?: string;
+  role?: string;
   isActive?: boolean;
+  vicidialUserId?: string;
 }
 
 class UsersService {
@@ -55,8 +60,9 @@ class UsersService {
     return await apiClient.patch<User>(`${this.baseUrl}/${id}`, data);
   }
 
-  async deleteUser(id: string): Promise<void> {
-    await apiClient.delete(`${this.baseUrl}/${id}`);
+  async deleteUser(id: string, force: boolean = false): Promise<void> {
+    const url = force ? `${this.baseUrl}/${id}?force=true` : `${this.baseUrl}/${id}`;
+    await apiClient.delete(url);
   }
 
   // RBAC User-Role Assignment Methods

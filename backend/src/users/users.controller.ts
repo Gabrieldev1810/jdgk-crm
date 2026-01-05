@@ -19,16 +19,16 @@ export class UsersController {
     private permissionCacheService: PermissionCacheService,
   ) {}
 
-  @ApiOperation({ summary: 'Get all users (Admin only)' })
+  @ApiOperation({ summary: 'Get all users (Admin and Manager)' })
   @ApiResponse({ status: 200, description: 'List of users' })
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN', 'SUPER_ADMIN', 'MANAGER', 'AGENT')
   @Get()
   async findAll(
     @Request() req,
     @Query('skip') skip?: number,
     @Query('take') take?: number,
   ) {
-    const users = await this.usersService.findAll(skip, take);
+    const users = await this.usersService.findAll(skip, take, req.user);
     
     // Log data access
     await this.auditService.logDataAccessEvent(
@@ -47,6 +47,25 @@ export class UsersController {
     return users;
   }
 
+  @ApiOperation({ summary: 'Assign manager to user' })
+  @ApiResponse({ status: 200, description: 'User updated' })
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Patch(':id/assign-manager')
+  async assignManager(
+    @Param('id') id: string,
+    @Body('managerId') managerId: string,
+  ) {
+    return this.usersService.assignManager(id, managerId);
+  }
+
+  @ApiOperation({ summary: 'Get performance data' })
+  @ApiResponse({ status: 200, description: 'Performance data retrieved successfully' })
+  @Roles('SUPER_ADMIN', 'ADMIN', 'MANAGER', 'AGENT')
+  @Get('performance')
+  async getPerformance() {
+    return this.usersService.getPerformance();
+  }
+
   @ApiOperation({ summary: 'Get user by ID' })
   @ApiResponse({ status: 200, description: 'User details' })
   @ApiResponse({ status: 404, description: 'User not found' })
@@ -57,7 +76,7 @@ export class UsersController {
 
 
 
-  @ApiOperation({ summary: 'Create new user (Admin only)' })
+  @ApiOperation({ summary: 'Create new user (Admin and Manager)' })
   @ApiResponse({ status: 201, description: 'User created successfully' })
   @ApiResponse({ status: 409, description: 'User already exists' })
   @ApiBody({ 
@@ -74,10 +93,10 @@ export class UsersController {
       required: ['email', 'firstName', 'lastName', 'password', 'role']
     }
   })
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN', 'SUPER_ADMIN', 'MANAGER')
   @Post()
   async createUser(@Body() createUserDto: CreateUserDto, @Request() req) {
-    const newUser = await this.usersService.createUser(createUserDto);
+    const newUser = await this.usersService.createUser(createUserDto, req.user);
     
     // Log user creation
     await this.auditService.logUserManagementEvent(
@@ -136,11 +155,16 @@ export class UsersController {
   @ApiResponse({ status: 404, description: 'User not found' })
   @Roles('ADMIN', 'SUPER_ADMIN')
   @Delete(':id')
-  async deleteUser(@Param('id') id: string, @Request() req) {
+  async deleteUser(
+    @Param('id') id: string, 
+    @Query('force') force: string,
+    @Request() req
+  ) {
     // Get user data before deletion for audit log
     const userToDelete = await this.usersService.findById(id);
     
-    await this.usersService.deleteUser(id);
+    const isForceDelete = force === 'true';
+    await this.usersService.deleteUser(id, isForceDelete);
     
     // Log user deletion
     await this.auditService.logUserManagementEvent(
@@ -148,6 +172,7 @@ export class UsersController {
       req.user.id,
       id,
       {
+        force: isForceDelete,
         deletedUser: {
           email: userToDelete?.email,
           firstName: userToDelete?.firstName,
@@ -167,6 +192,34 @@ export class UsersController {
   @Get(':id/roles')
   async getUserRoles(@Param('id') id: string) {
     return this.usersService.getUserRoles(id);
+  }
+
+  @ApiOperation({ summary: 'Update user roles (Admin only)' })
+  @ApiResponse({ status: 200, description: 'User roles updated successfully' })
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Patch(':id/roles')
+  async updateUserRoles(
+    @Param('id') userId: string,
+    @Body('roleIds') roleIds: string[],
+    @Request() req
+  ) {
+    await this.usersService.updateUserRoles(userId, roleIds, req.user.id);
+    
+    // Log role update
+    await this.auditService.logRbacEvent(
+      'USER_ROLES_UPDATED',
+      req.user.id,
+      'USER',
+      userId,
+      {
+        roleIds: roleIds,
+        updatedForUserId: userId,
+      },
+      req.ip,
+      req.get('User-Agent')
+    );
+
+    return { message: 'User roles updated successfully' };
   }
 
   @ApiOperation({ summary: 'Assign role to user (Admin only)' })
@@ -225,18 +278,7 @@ export class UsersController {
     return { message: 'Role removed successfully' };
   }
 
-  @ApiOperation({ summary: 'Update user roles (Admin only)' })
-  @ApiResponse({ status: 200, description: 'User roles updated successfully' })
-  @Roles('ADMIN', 'SUPER_ADMIN')
-  @Patch(':id/roles')
-  async updateUserRoles(
-    @Param('id') userId: string,
-    @Body('roleIds') roleIds: string[],
-    @Request() req
-  ) {
-    await this.usersService.updateUserRoles(userId, roleIds, req.user.id);
-    return { message: 'User roles updated successfully' };
-  }
+
 
   @ApiOperation({ summary: 'Get user permissions' })
   @ApiResponse({ status: 200, description: 'User permissions retrieved successfully' })
@@ -306,4 +348,5 @@ export class UsersController {
       };
     }
   }
+
 }

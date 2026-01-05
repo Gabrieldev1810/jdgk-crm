@@ -1,376 +1,270 @@
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { 
-  Phone, 
-  Play,
-  Pause,
-  Volume2,
-  VolumeX,
-  Download,
-  Search,
-  Filter,
-  Calendar,
-  Clock,
-  User,
-  FileAudio
-} from "lucide-react"
-
-interface RecordedCall {
-  id: string
-  accountId: string
-  customerName: string
-  phoneNumber: string
-  agentName: string
-  startTime: string
-  duration: number
-  disposition: string
-  fileUrl: string
-  fileSize: string
-  quality: "excellent" | "good" | "fair" | "poor"
-}
-
-// Removed mock data - should load from API
-const mockRecordedCalls: RecordedCall[] = [] // Removed mock data
-
-function formatDuration(seconds: number) {
-  const hours = Math.floor(seconds / 3600)
-  const mins = Math.floor((seconds % 3600) / 60)
-  const secs = seconds % 60
-  
-  if (hours > 0) {
-    return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  }
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-}
-
-function getQualityColor(quality: RecordedCall["quality"]) {
-  switch (quality) {
-    case "excellent": return "bg-success/10 text-success border-success/20"
-    case "good": return "bg-accent/10 text-accent border-accent/20"
-    case "fair": return "bg-warning/10 text-warning border-warning/20"
-    case "poor": return "bg-destructive/10 text-destructive border-destructive/20"
-    default: return "bg-muted/10 text-muted-foreground border-muted/20"
-  }
-}
-
-function getDispositionColor(disposition: string) {
-  switch (disposition) {
-    case "PAYMENT_FULL":
-    case "PAYMENT_ARRANGED":
-      return "bg-success/10 text-success border-success/20"
-    case "CALLBACK_REQUESTED":
-    case "VOICEMAIL_LEFT":
-      return "bg-accent/10 text-accent border-accent/20"
-    case "NO_ANSWER":
-    case "DISCONNECTED":
-      return "bg-warning/10 text-warning border-warning/20"
-    case "REFUSED_PAYMENT":
-    case "DISPUTE_CLAIM":
-      return "bg-destructive/10 text-destructive border-destructive/20"
-    default:
-      return "bg-muted/10 text-muted-foreground border-muted/20"
-  }
-}
+import React, { useEffect, useState } from 'react';
+import { callsService } from '@/services';
+import { Call, CallStatus } from '@/types/api';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { format } from 'date-fns';
+import { Loader2, Search, Play, FileAudio } from 'lucide-react';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function CallCenter() {
-  const [recordedCalls] = useState<RecordedCall[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
-  const [selectedCall, setSelectedCall] = useState<RecordedCall | null>(null)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [isMuted, setIsMuted] = useState(false)
+  const [calls, setCalls] = useState<Call[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const { toast } = useToast();
 
-  // Filter calls based on search term
-  const filteredCalls = recordedCalls.filter(call =>
-    call.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    call.phoneNumber.includes(searchTerm) ||
-    call.agentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    call.accountId.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const fetchCalls = async () => {
+    setLoading(true);
+    try {
+      const response = await callsService.getCalls({
+        page,
+        limit: 10,
+        search: search || undefined,
+        status: statusFilter !== 'all' ? (statusFilter as CallStatus) : undefined,
+      });
+      setCalls(response.data);
+      setTotalPages(response.pagination.totalPages);
+    } catch (error) {
+      console.error('Failed to fetch calls:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load call history',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const playCall = (call: RecordedCall) => {
-    setSelectedCall(call)
-    setIsPlaying(true)
-    setCurrentTime(0)
-  }
+  useEffect(() => {
+    fetchCalls();
+  }, [page, search, statusFilter]);
 
-  const togglePlayPause = () => {
-    setIsPlaying(!isPlaying)
-  }
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPage(1);
+    fetchCalls();
+  };
 
-  const stopCall = () => {
-    setIsPlaying(false)
-    setCurrentTime(0)
-    setSelectedCall(null)
-  }
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   return (
-    <div className="min-h-screen bg-background p-6 space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="glass-card p-6 border-glass-border">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold font-poppins text-foreground">
-              Recorded Calls
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              3CX Call Recordings • Audio Playback & Analysis
-            </p>
-          </div>
-          <div className="flex items-center space-x-4">
-            <Badge variant="outline" className="border-success text-success">
-              <div className="w-2 h-2 bg-success rounded-full mr-2 animate-pulse" />
-              3CX Connected
-            </Badge>
-            <Badge variant="secondary" className="font-mono">
-              {recordedCalls.length} Recordings
-            </Badge>
-          </div>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Call Center</h2>
+          <p className="text-muted-foreground">
+            View and manage call logs and recordings.
+          </p>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Audio Player & Call Details */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Audio Player */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <FileAudio className="w-5 h-5 text-accent" />
-                <span>Audio Player</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {!selectedCall ? (
-                <div className="text-center py-12">
-                  <FileAudio className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-foreground mb-2">No Recording Selected</h3>
-                  <p className="text-muted-foreground mb-6">
-                    Select a recorded call from the list to start playback
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {/* Current Call Info */}
-                  <div className="glass-light p-4 rounded-lg">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-xl font-bold text-foreground">
-                          {selectedCall.customerName}
-                        </h3>
-                        <p className="text-muted-foreground font-mono">
-                          {selectedCall.phoneNumber} • {selectedCall.agentName}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm text-muted-foreground">
-                          {selectedCall.startTime}
-                        </div>
-                        <Badge className={getQualityColor(selectedCall.quality)}>
-                          {selectedCall.quality.toUpperCase()} Quality
-                        </Badge>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Account:</span>
-                        <div className="font-mono font-medium">{selectedCall.accountId}</div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Duration:</span>
-                        <div className="font-medium">{formatDuration(selectedCall.duration)}</div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">File Size:</span>
-                        <div className="font-medium">{selectedCall.fileSize}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Playback Progress */}
-                  <div className="text-center">
-                    <div className="text-4xl font-mono font-bold text-foreground mb-2">
-                      {formatDuration(currentTime)} / {formatDuration(selectedCall.duration)}
-                    </div>
-                    <div className="w-full bg-glass-light rounded-full h-2 mb-4">
-                      <div 
-                        className="bg-gradient-accent h-2 rounded-full transition-all duration-300" 
-                        style={{ width: `${(currentTime / selectedCall.duration) * 100}%` }}
-                      />
-                    </div>
-                    <Badge 
-                      variant="outline" 
-                      className={isPlaying ? "border-success text-success" : "border-muted text-muted-foreground"}
-                    >
-                      {isPlaying ? "Playing" : "Paused"}
-                    </Badge>
-                  </div>
-
-                  {/* Playback Controls */}
-                  <div className="flex items-center justify-center space-x-4">
-                    <Button
-                      variant="outline"
-                      size="lg"
-                      onClick={() => setIsMuted(!isMuted)}
-                      className="glass-light border-glass-border"
-                    >
-                      {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                    </Button>
-                    
-                    <Button
-                      size="lg"
-                      onClick={togglePlayPause}
-                      className="bg-gradient-accent hover:shadow-accent"
-                    >
-                      {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      size="lg"
-                      onClick={stopCall}
-                      className="glass-light border-glass-border"
-                    >
-                      Stop
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      size="lg"
-                      className="glass-light border-glass-border"
-                    >
-                      <Download className="w-5 h-5" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Call Details */}
-          {selectedCall && (
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <User className="w-5 h-5 text-accent" />
-                  <span>Call Details</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Disposition</label>
-                    <Badge className={getDispositionColor(selectedCall.disposition)}>
-                      {selectedCall.disposition.replace(/_/g, ' ')}
-                    </Badge>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">File Path</label>
-                    <p className="text-sm font-mono text-foreground">{selectedCall.fileUrl}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
-        {/* Recordings List */}
-        <div className="space-y-6">
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Clock className="w-5 h-5 text-accent" />
-                <span>Call Recordings</span>
-              </CardTitle>
-              <CardDescription>
-                {filteredCalls.length} recordings available
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {/* Search */}
-              <div className="relative mb-4">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+      <Card>
+        <CardHeader>
+          <CardTitle>Call Logs</CardTitle>
+          <CardDescription>
+            A list of all calls made or received by the system.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-4 mb-6">
+            <div className="flex-1 max-w-sm">
+              <form onSubmit={handleSearch} className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search recordings..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 glass-light border-glass-border focus:ring-accent focus:border-accent"
+                  type="search"
+                  placeholder="Search calls..."
+                  className="pl-8"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
                 />
-              </div>
+              </form>
+            </div>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => setStatusFilter(value)}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="COMPLETED">Completed</SelectItem>
+                <SelectItem value="NO_ANSWER">No Answer</SelectItem>
+                <SelectItem value="BUSY">Busy</SelectItem>
+                <SelectItem value="FAILED">Failed</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-              {/* Recordings List */}
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {filteredCalls.map((call) => (
-                  <div 
-                    key={call.id}
-                    className={`glass-light p-3 rounded-lg hover:bg-glass-medium/50 transition-colors cursor-pointer ${
-                      selectedCall?.id === call.id ? 'ring-2 ring-accent' : ''
-                    }`}
-                    onClick={() => playCall(call)}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="font-medium text-foreground">
-                        {call.customerName}
-                      </div>
-                      <Badge className={getQualityColor(call.quality)}>
-                        {call.quality}
-                      </Badge>
-                    </div>
-                    <div className="text-xs text-muted-foreground space-y-1">
-                      <div className="font-mono">{call.phoneNumber}</div>
-                      <div className="flex justify-between">
-                        <span>{call.agentName}</span>
-                        <span>{formatDuration(call.duration)}</span>
-                      </div>
-                      <div className="text-xs">{call.startTime}</div>
-                    </div>
-                  </div>
-                ))}
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date & Time</TableHead>
+                  <TableHead>Agent</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Recording</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="h-24 text-center">
+                      <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                    </TableCell>
+                  </TableRow>
+                ) : calls.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="h-24 text-center">
+                      No calls found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  calls.map((call) => (
+                    <TableRow key={call.id}>
+                      <TableCell>
+                        {format(new Date(call.startTime), 'MMM d, yyyy HH:mm')}
+                      </TableCell>
+                      <TableCell>
+                        {call.agent ? (
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {call.agent.firstName} {call.agent.lastName}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {call.agent.email}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">System</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {call.account ? (
+                          <span className="font-medium">
+                            {call.account.fullName}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">Unknown</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{call.direction}</Badge>
+                      </TableCell>
+                      <TableCell>{formatDuration(call.duration || 0)}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            call.status === 'COMPLETED'
+                              ? 'default'
+                              : call.status === 'FAILED'
+                                ? 'destructive'
+                                : 'secondary'
+                          }
+                        >
+                          {call.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {call.recordingPath ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Play Recording"
+                            onClick={() => {
+                              if (call.recordingPath) {
+                                // Use proxy endpoint to avoid mixed content / CORS / permissions issues
+                                const token = localStorage.getItem('token');
+                                const proxyUrl = `/api/vicidial/proxy-recording?path=${encodeURIComponent(call.recordingPath)}`;
 
-                {filteredCalls.length === 0 && (
-                  <div className="text-center py-8">
-                    <FileAudio className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">No recordings found</p>
-                  </div>
+                                // Open in new tab which will stream the audio
+                                // We append the token if needed, or rely on cookie if set, 
+                                // but since standard <audio> or window.open doesn't send headers easily,
+                                // we might need a workaround or assume the proxy endpoint is public/secured via cookie.
+                                // For now, let's try direct open. Ideally, we'd use a signed URL or similar.
+                                // If the backend requires Auth header, window.open won't work well without cookies.
+                                // NOTE: 'Res' object in Controller needs @Res() res: Response
+
+                                window.open(proxyUrl, '_blank');
+                              } else {
+                                toast({
+                                  title: "Playback Unavailable",
+                                  description: `Invalid recording URL`,
+                                  variant: "destructive"
+                                });
+                              }
+                            }}
+                          >
+                            <Play className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <FileAudio className="h-4 w-4 text-muted-foreground ml-auto opacity-20" />
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
                 )}
-              </div>
-            </CardContent>
-          </Card>
+              </TableBody>
+            </Table>
+          </div>
 
-          {/* Quick Stats */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="text-base">Recording Stats</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Total Recordings</span>
-                <span className="font-mono font-bold">{recordedCalls.length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Total Duration</span>
-                <span className="font-mono font-bold">
-                  {formatDuration(recordedCalls.reduce((acc, call) => acc + call.duration, 0))}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Avg Duration</span>
-                <span className="font-mono font-bold">
-                  {formatDuration(Math.round(recordedCalls.reduce((acc, call) => acc + call.duration, 0) / recordedCalls.length))}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Storage Used</span>
-                <span className="font-mono font-bold text-accent">47.2 GB</span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+          <div className="flex items-center justify-end space-x-2 py-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1 || loading}
+            >
+              Previous
+            </Button>
+            <div className="text-sm text-muted-foreground">
+              Page {page} of {totalPages}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages || loading}
+            >
+              Next
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
-  )
+  );
 }

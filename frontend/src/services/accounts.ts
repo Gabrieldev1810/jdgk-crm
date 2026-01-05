@@ -44,8 +44,8 @@ class AccountService {
     return response;
   }
 
-  async getStatistics(): Promise<AccountStatistics> {
-    const response = await api.get<AccountStatistics>(`${this.baseUrl}/statistics`);
+  async getStatistics(params?: AccountSearchParams): Promise<AccountStatistics> {
+    const response = await api.get<AccountStatistics>(`${this.baseUrl}/statistics`, params);
     return response;
   }
 
@@ -59,8 +59,11 @@ class AccountService {
   async bulkUpload(data: BulkUploadRequest): Promise<BulkUploadResponse> {
     const formData = new FormData();
     formData.append('file', data.file);
+    if (data.skipDuplicates !== undefined) formData.append('skipErrors', String(data.skipDuplicates));
+    if (data.updateExisting !== undefined) formData.append('updateExisting', String(data.updateExisting));
+    if (data.campaignId) formData.append('campaignId', data.campaignId);
     
-    const response = await api.post<BulkUploadResponse>(`${this.baseUrl}/bulk-upload`, formData);
+    const response = await api.post<BulkUploadResponse>('bulk-upload/upload', formData);
     return response;
   }
 
@@ -84,6 +87,16 @@ class AccountService {
 
   async getCallHistory(accountId: string): Promise<any[]> {
     const response = await api.get<any[]>(`${this.baseUrl}/${accountId}/call-history`);
+    return response;
+  }
+
+  async syncVicidialLeads(campaignId: string): Promise<{ created: number; updated: number; errors: number }> {
+    // Increase timeout to 5 minutes for large syncs
+    const response = await api.post<{ created: number; updated: number; errors: number }>(
+        `${this.baseUrl}/sync/vicidial`, 
+        { campaignId },
+        { timeout: 300000 }
+    );
     return response;
   }
 

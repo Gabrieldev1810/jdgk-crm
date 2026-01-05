@@ -1,11 +1,11 @@
 import { api } from './api';
 import { config } from '../config/environment';
-import type { 
-  LoginRequest, 
-  LoginResponse, 
-  RefreshTokenRequest, 
-  RefreshTokenResponse, 
-  User 
+import type {
+  LoginRequest,
+  LoginResponse,
+  RefreshTokenRequest,
+  RefreshTokenResponse,
+  User
 } from '../types/api';
 
 // ================================
@@ -25,10 +25,18 @@ class AuthService {
   private initializeAuth() {
     const storedUser = localStorage.getItem(config.auth.userKey);
     const token = localStorage.getItem(config.auth.tokenKey);
-    
+
     if (storedUser && token) {
       try {
-        this.currentUser = JSON.parse(storedUser);
+        const parsed = JSON.parse(storedUser);
+        // FIX: Handle legacy nested user object (self-healing)
+        if (parsed.user && parsed.email === undefined) {
+          console.warn('⚠️ Detected nested user object in storage, auto-fixing...');
+          this.currentUser = parsed.user;
+          localStorage.setItem(config.auth.userKey, JSON.stringify(parsed.user));
+        } else {
+          this.currentUser = parsed;
+        }
         this.notifyAuthChange();
       } catch (error) {
         console.error('Failed to parse stored user data:', error);
@@ -42,64 +50,43 @@ class AuthService {
   // ================================
   async login(credentials: LoginRequest): Promise<LoginResponse> {
     try {
-      console.log('🔍 Attempting login with credentials:', { email: credentials.email });
-      
-      // Try debug endpoint first to bypass cookie issues
-      interface BackendLoginResponse {
-        success: boolean;
+
+
+      interface RegularLoginResponse {
         user: User;
         accessToken: string;
-        refreshToken?: string;
-        message: string;
       }
-      
-      let response: BackendLoginResponse;
-      
-      try {
-        console.log('🧪 Trying debug login endpoint...');
-        response = await api.post<BackendLoginResponse>('/auth/login-debug', credentials);
-      } catch (debugError) {
-        console.log('⚠️ Debug login failed, falling back to regular login:', debugError);
-        // Fallback to regular login
-        interface RegularLoginResponse {
-          user: User;
-          accessToken: string;
-        }
-        
-        const regularResponse = await api.post<RegularLoginResponse>('/auth/login', credentials);
-        response = {
-          success: true,
-          user: regularResponse.user,
-          accessToken: regularResponse.accessToken,
-          message: 'Login successful (regular endpoint)'
-        };
-      }
-      
-      console.log('✅ Login response received:', { 
-        success: response.success, 
-        hasUser: !!response.user, 
-        hasToken: !!response.accessToken 
-      });
-      
+
+      const regularResponse = await api.post<RegularLoginResponse>('/auth/login', credentials);
+
+      const response = {
+        success: true,
+        user: regularResponse.user,
+        accessToken: regularResponse.accessToken,
+        message: 'Login successful'
+      };
+
+
+
       // The backend returns data directly
       if (response && response.user && response.accessToken) {
         const { user, accessToken, refreshToken } = response;
-        
+
         // Store authentication data
         localStorage.setItem(config.auth.tokenKey, accessToken);
         localStorage.setItem(config.auth.userKey, JSON.stringify(user));
-        
+
         // Store refresh token if provided (for debug mode)
         if (refreshToken) {
           localStorage.setItem('refresh_token_debug', refreshToken);
         }
-        
+
         // Update current user
         this.currentUser = user;
         this.notifyAuthChange();
-        
-        console.log('✅ Login successful, user authenticated:', user.email);
-        
+
+
+
         // Return in expected format for consistency
         return {
           user,
@@ -145,10 +132,10 @@ class AuthService {
   async refreshToken(): Promise<string> {
     try {
       console.log('🔄 Attempting token refresh...');
-      
+
       // Check if we have a debug refresh token
       const debugRefreshToken = localStorage.getItem('refresh_token_debug');
-      
+
       if (debugRefreshToken) {
         console.log('🧪 Using debug refresh token method');
         // For debug mode, we can't use the refresh token easily, so just return current token
@@ -158,20 +145,20 @@ class AuthService {
           return currentToken;
         }
       }
-      
+
       // Backend expects refresh token from httpOnly cookie, no body needed
       interface BackendRefreshResponse {
         accessToken: string;
       }
-      
+
       const response = await api.post<BackendRefreshResponse>('/auth/refresh');
 
       if (response && response.accessToken) {
         const { accessToken } = response;
-        
+
         // Store new access token
         localStorage.setItem(config.auth.tokenKey, accessToken);
-        
+
         console.log('✅ Token refreshed successfully');
         return accessToken;
       } else {
@@ -179,7 +166,7 @@ class AuthService {
       }
     } catch (error) {
       console.error('❌ Token refresh failed:', error);
-      
+
       // In debug mode, don't clear auth immediately
       const debugRefreshToken = localStorage.getItem('refresh_token_debug');
       if (debugRefreshToken) {
@@ -189,7 +176,7 @@ class AuthService {
           return currentToken;
         }
       }
-      
+
       this.clearAuth();
       throw error;
     }
@@ -207,7 +194,7 @@ class AuthService {
 
     try {
       const response = await api.get<User>('/auth/me');
-      
+
       if (response) {
         this.currentUser = response;
         localStorage.setItem(config.auth.userKey, JSON.stringify(response));
@@ -292,7 +279,7 @@ class AuthService {
   // ================================
   onAuthChange(callback: (user: User | null) => void): () => void {
     this.authCallbacks.push(callback);
-    
+
     // Return unsubscribe function
     return () => {
       const index = this.authCallbacks.indexOf(callback);

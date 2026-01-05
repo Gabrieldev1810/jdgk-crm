@@ -19,8 +19,16 @@ export class CreateUserDto {
   role?: string;
 
   @IsOptional()
+  @IsString({ each: true })
+  roleIds?: string[];
+
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  vicidialUserId?: string;
 }
 
 export class UpdateUserDto {
@@ -48,4 +56,8 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  vicidialUserId?: string;
 }

@@ -22,6 +22,7 @@ export interface DashboardMetrics {
   totalCollectedThisMonth: number;
   collectionRate: number;
   averageCollection: number;
+  teamQuota?: number;
   
   // Agent Performance
   totalAgents: number;
@@ -34,6 +35,13 @@ export interface DashboardMetrics {
   // Timeline Data
   collectionsTimeline: TimelineData[];
   callsTimeline: TimelineData[];
+  
+  // Call Time Breakdown
+  timeOfDayBreakdown?: {
+    morning: number;
+    afternoon: number;
+    evening: number;
+  };
 }
 
 export interface AgentPerformance {
@@ -55,32 +63,40 @@ export interface TimelineData {
 
 export interface AccountStatistics {
   totalAccounts: number;
-  accountsByStatus: {
-    NEW: number;
-    ACTIVE: number;
-    TOUCHED: number;
-    PTP: number;
-    COLLECTED: number;
-    CLOSED: number;
-  };
-  accountsByPriority: {
-    HIGH: number;
-    MEDIUM: number;
-    LOW: number;
-  };
+  totalCollections: number;
   totalBalance: number;
-  collectedAmount: number;
-  averageBalance: number;
+  teamQuota?: number;
+  accountsByStatus: {
+    active: number;
+    new: number;
+    ptp: number;
+    paid: number;
+    touched: number;
+    [key: string]: number;
+  };
 }
 
 export interface CallStatistics {
   totalCalls: number;
   callsToday: number;
   callsThisWeek: number;
-  callsThisMonth: number;
-  averageDuration: number;
-  contactRate: number;
-  callsByDisposition: Record<string, number>;
+  completedCalls: number;
+  avgDuration: number;
+  successRate: number;
+  dispositionBreakdown: Record<string, number>;
+  timeOfDayBreakdown: {
+    morning: number;
+    afternoon: number;
+    evening: number;
+  };
+}
+
+export interface RecentCollection {
+  id: string;
+  accountNumber: string;
+  fullName: string;
+  lastPaymentAmount: number;
+  lastPaymentDate: string;
 }
 
 // ================================
@@ -102,7 +118,7 @@ class DashboardService {
       // Get account statistics
       const accountStats = await this.getAccountStatistics();
       
-      // Get call statistics (mock for now, will implement when calls module is ready)
+      // Get call statistics
       const callStats = await this.getCallStatistics();
       
       // Get agent performance
@@ -112,21 +128,26 @@ class DashboardService {
       return {
         // Account Metrics
         totalAccounts: accountStats.totalAccounts,
-        activeAccounts: accountStats.accountsByStatus.ACTIVE || 0,
-        touchedAccounts: accountStats.accountsByStatus.TOUCHED || 0,
-        newAccountsThisWeek: 0, // TODO: Implement date-based queries
+        activeAccounts: accountStats.accountsByStatus.active || 0,
+        touchedAccounts: accountStats.accountsByStatus.touched || 0,
+        newAccountsThisWeek: accountStats.accountsByStatus.new || 0,
         
         // Call Metrics
         totalCallsToday: callStats.callsToday,
         totalCallsThisWeek: callStats.callsThisWeek,
-        averageCallDuration: callStats.averageDuration,
-        contactRate: callStats.contactRate,
+        averageCallDuration: callStats.avgDuration,
+        contactRate: callStats.successRate,
         
         // Financial Metrics
-        totalCollected: accountStats.collectedAmount,
-        totalCollectedThisMonth: accountStats.collectedAmount, // TODO: Monthly filter
-        collectionRate: (accountStats.collectedAmount / accountStats.totalBalance) * 100,
-        averageCollection: accountStats.collectedAmount / (accountStats.accountsByStatus.COLLECTED || 1),
+        totalCollected: accountStats.totalCollections,
+        totalCollectedThisMonth: accountStats.totalCollections,
+        collectionRate: (accountStats.totalCollections + accountStats.totalBalance) > 0 
+          ? (accountStats.totalCollections / (accountStats.totalCollections + accountStats.totalBalance)) * 100 
+          : 0,
+        averageCollection: accountStats.accountsByStatus.paid > 0 
+          ? accountStats.totalCollections / accountStats.accountsByStatus.paid 
+          : 0,
+        teamQuota: accountStats.teamQuota,
         
         // Agent Performance
         totalAgents: agentPerformance.length,
@@ -136,9 +157,12 @@ class DashboardService {
         // Status Breakdown
         accountsByStatus: accountStats.accountsByStatus,
         
+        // Call Time Breakdown
+        timeOfDayBreakdown: callStats.timeOfDayBreakdown,
+
         // Timeline Data (mock for now)
-        collectionsTimeline: this.generateMockTimeline(7, accountStats.collectedAmount / 7),
-        callsTimeline: this.generateMockTimeline(7, callStats.callsToday),
+        collectionsTimeline: this.generateMockTimeline(7, accountStats.totalCollections / 7),
+        callsTimeline: this.generateMockTimeline(7, callStats.totalCalls),
       };
     } catch (error) {
       console.error('Failed to fetch dashboard metrics:', error);
@@ -159,8 +183,19 @@ class DashboardService {
       return response;
     } catch (error) {
       console.error('Failed to fetch account statistics:', error);
-      // Return mock data as fallback
-      return this.getMockAccountStatistics();
+      // Return empty data as fallback
+      return {
+        totalAccounts: 0,
+        totalCollections: 0,
+        totalBalance: 0,
+        accountsByStatus: {
+          active: 0,
+          new: 0,
+          ptp: 0,
+          paid: 0,
+          touched: 0
+        }
+      };
     }
   }
 
@@ -173,15 +208,33 @@ class DashboardService {
    */
   async getCallStatistics(): Promise<CallStatistics> {
     try {
-      // TODO: Implement when calls API is ready
-      // const response = await api.get<CallStatistics>(`${this.baseUrl}/calls/statistics`);
-      // return response;
-      
-      // Return mock data for now
-      return this.getMockCallStatistics();
+      const response = await api.get<CallStatistics>(`/calls/statistics`);
+      return response;
     } catch (error) {
       console.error('Failed to fetch call statistics:', error);
-      return this.getMockCallStatistics();
+      return {
+        totalCalls: 0,
+        callsToday: 0,
+        callsThisWeek: 0,
+        completedCalls: 0,
+        avgDuration: 0,
+        successRate: 0,
+        dispositionBreakdown: {},
+        timeOfDayBreakdown: { morning: 0, afternoon: 0, evening: 0 }
+      };
+    }
+  }
+
+  /**
+   * Get recent collections
+   */
+  async getRecentCollections(): Promise<RecentCollection[]> {
+    try {
+      const response = await api.get<RecentCollection[]>(`/accounts/recent-collections`);
+      return Array.isArray(response) ? response : [];
+    } catch (error) {
+      console.error('Failed to fetch recent collections:', error);
+      return [];
     }
   }
 
@@ -194,26 +247,11 @@ class DashboardService {
    */
   async getAgentPerformance(): Promise<AgentPerformance[]> {
     try {
-      // Get all users with role filtering
-      const response = await api.get<any[]>(`/users`);
-      
-      // Transform to agent performance (with mock call data for now)
-      return response
-        .filter(user => user.role === 'AGENT' || user.role === 'MANAGER')
-        .map((user, index) => ({
-          id: user.id,
-          name: `${user.firstName} ${user.lastName}`,
-          email: user.email,
-          callsToday: Math.floor(Math.random() * 50) + 10, // Mock
-          totalCalls: Math.floor(Math.random() * 500) + 100, // Mock
-          collections: Math.floor(Math.random() * 50000) + 10000, // Mock
-          contactRate: Math.floor(Math.random() * 30) + 70, // Mock
-          avgCallDuration: Math.floor(Math.random() * 300) + 120, // Mock
-        }))
-        .sort((a, b) => b.collections - a.collections);
+      const response = await api.get<AgentPerformance[]>(`/users/performance`);
+      return Array.isArray(response) ? response : [];
     } catch (error) {
       console.error('Failed to fetch agent performance:', error);
-      return this.getMockAgentPerformance();
+      return [];
     }
   }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+﻿import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,51 +8,38 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { 
-  Plus, 
+import {
+  Plus,
   Edit,
   Trash2,
   FileText,
   CheckCircle,
   XCircle,
-  Clock,
   Phone,
   MessageSquare,
-  RefreshCw,
-  AlertCircle
+  RefreshCw
 } from "lucide-react"
 import { dispositionsService, Disposition, DispositionCategory, DispositionStats } from "@/services/dispositions"
 
 // Helper functions for UI rendering
 function getColorClass(color?: string, type: "bg" | "text" | "border" = "bg"): string {
-  const colorMap = {
+  const colorMap: Record<string, string> = {
     success: `${type}-success`,
-    destructive: `${type}-destructive`, 
+    destructive: `${type}-destructive`,
     warning: `${type}-warning`,
     accent: `${type}-accent`,
-    muted: `${type}-muted-foreground`
+    muted: `${type}-muted-foreground`,
   }
-  return colorMap[color as keyof typeof colorMap] || `${type}-muted-foreground`
+  return colorMap[color || "muted"] || `${type}-muted-foreground`
 }
 
 function getCategoryIcon(categoryName?: string) {
-  switch (categoryName) {
-    case "Successful": return <CheckCircle className="w-4 h-4" />
-    case "No Contact": return <XCircle className="w-4 h-4" />
-    case "Unsuccessful": return <Phone className="w-4 h-4" />
-    case "System": return <FileText className="w-4 h-4" />
-    default: return <FileText className="w-4 h-4" />
-  }
-}
-
-function getCategoryLabel(categoryName?: string) {
-  switch (categoryName) {
-    case "Successful": return "Successful"
-    case "No Contact": return "No Contact"
-    case "Unsuccessful": return "Unsuccessful"
-    case "System": return "System"
-    default: return categoryName || "Other"
-  }
+  const name = categoryName?.toLowerCase() || "";
+  if (name.includes("success")) return <CheckCircle className="w-4 h-4" />
+  if (name.includes("no contact")) return <XCircle className="w-4 h-4" />
+  if (name.includes("unsuccessful") || name.includes("fail")) return <Phone className="w-4 h-4" />
+  if (name.includes("system")) return <FileText className="w-4 h-4" />
+  return <FileText className="w-4 h-4" />
 }
 
 export default function Dispositions() {
@@ -65,19 +52,26 @@ export default function Dispositions() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
   const [editingDisposition, setEditingDisposition] = useState<Disposition | null>(null)
   const [isCreating, setIsCreating] = useState(false)
+  
+  // Edit form state
   const [editForm, setEditForm] = useState({
     label: "",
-    description: "", 
-    color: "",
-    category: ""
+    description: "",
+    categoryId: "",
+    newAccountStatus: "",
+    followUpDelay: 0
   })
+
+  // Create form state
   const [createForm, setCreateForm] = useState({
     code: "",
     label: "",
     description: "",
-    category: "",
+    categoryId: "",
     requiresFollowUp: false,
-    isSuccessful: false
+    isSuccessful: false,
+    newAccountStatus: "",
+    followUpDelay: 0
   })
 
   // Load dispositions data
@@ -89,23 +83,33 @@ export default function Dispositions() {
     try {
       setLoading(true)
       setError(null)
-      
+
       const [dispositionsData, categoriesData, statsData] = await Promise.all([
         dispositionsService.getDispositions(),
         dispositionsService.getCategories(),
         dispositionsService.getDispositionStats()
       ])
-      
+
       setDispositions(dispositionsData)
       setCategories(categoriesData)
       setStats(statsData)
     } catch (err) {
       console.error('Failed to load dispositions data:', err)
       setError('Failed to load dispositions data')
-      
-      // Use fallback data
-      const fallbackDispositions = await dispositionsService.getDispositions()
-      setDispositions(fallbackDispositions)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSyncVicidial = async () => {
+    try {
+      setLoading(true)
+      const result = await dispositionsService.syncVicidialStatuses()
+      alert(`Synced ${result.count} dispositions from Vicidial.`)
+      loadDispositionsData()
+    } catch (error) {
+      console.error("Failed to sync Vicidial dispositions:", error)
+      alert("Failed to sync Vicidial dispositions. Please check the console for details.")
     } finally {
       setLoading(false)
     }
@@ -113,37 +117,30 @@ export default function Dispositions() {
 
   const filteredDispositions = dispositions.filter(disp => {
     const matchesSearch = disp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         disp.key.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesCategory = selectedCategory === "all" || disp.category?.name === selectedCategory
+      disp.code.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesCategory = selectedCategory === "all" || disp.categoryId === selectedCategory
     return matchesSearch && matchesCategory
   })
 
-  const categoryStats = stats ? {
-    contact: dispositions.filter(d => d.category?.name === "Successful").length,
-    no_contact: dispositions.filter(d => d.category?.name === "No Contact").length,
-    outcome: dispositions.filter(d => d.category?.name === "Unsuccessful").length,
-    total: stats.totalDispositions
-  } : {
-    contact: 0,
-    no_contact: 0,
-    outcome: 0,
-    total: 0
+  // Calculate stats from loaded data
+  const categoryStats = {
+    contact: dispositions.filter(d => d.category?.name?.toLowerCase().includes("success")).length,
+    no_contact: dispositions.filter(d => d.category?.name?.toLowerCase().includes("no contact")).length,
+    outcome: dispositions.filter(d => d.category?.name?.toLowerCase().includes("unsuccessful")).length,
+    total: dispositions.length
   }
 
   const toggleActive = async (id: string) => {
     try {
       const disposition = dispositions.find(d => d.id === id)
       if (!disposition) return
-      
-      const updated = await dispositionsService.toggleDispositionStatus(id, !disposition.isActive)
-      setDispositions(prev => 
-        prev.map(disp => 
+
+      const updated = await dispositionsService.updateDisposition(id, { isActive: !disposition.isActive })
+      setDispositions(prev =>
+        prev.map(disp =>
           disp.id === id ? updated : disp
         )
       )
-      
-      // Show success message
-      console.info(`✅ Disposition "${disposition.name}" ${updated.isActive ? 'activated' : 'deactivated'}`)
     } catch (error) {
       console.error('Failed to toggle disposition status:', error)
       setError('Failed to update disposition status.')
@@ -155,8 +152,9 @@ export default function Dispositions() {
     setEditForm({
       label: disposition.name,
       description: disposition.description || "",
-      color: dispositionsService.getDispositionColor(disposition),
-      category: disposition.categoryId
+      categoryId: disposition.categoryId,
+      newAccountStatus: disposition.newAccountStatus || "",
+      followUpDelay: disposition.followUpDelay || 0
     })
   }
 
@@ -165,8 +163,9 @@ export default function Dispositions() {
     setEditForm({
       label: "",
       description: "",
-      color: "",
-      category: ""
+      categoryId: "",
+      newAccountStatus: "",
+      followUpDelay: 0
     })
   }
 
@@ -176,9 +175,11 @@ export default function Dispositions() {
       code: "",
       label: "",
       description: "",
-      category: categories.length > 0 ? categories[0].id : "",
+      categoryId: categories.length > 0 ? categories[0].id : "",
       requiresFollowUp: false,
-      isSuccessful: false
+      isSuccessful: false,
+      newAccountStatus: "",
+      followUpDelay: 0
     })
   }
 
@@ -188,33 +189,34 @@ export default function Dispositions() {
       code: "",
       label: "",
       description: "",
-      category: "",
+      categoryId: "",
       requiresFollowUp: false,
-      isSuccessful: false
+      isSuccessful: false,
+      newAccountStatus: "",
+      followUpDelay: 0
     })
   }
 
   const saveCreate = async () => {
-    if (!createForm.label.trim() || !createForm.code.trim() || !createForm.category) return
-    
+    if (!createForm.label.trim() || !createForm.code.trim() || !createForm.categoryId) return
+
     try {
       const createData = {
-        key: createForm.code,
+        code: createForm.code,
         name: createForm.label,
         description: createForm.description,
-        categoryId: createForm.category,
+        categoryId: createForm.categoryId,
         requiresFollowUp: createForm.requiresFollowUp,
         isSuccessful: createForm.isSuccessful,
+        newAccountStatus: createForm.newAccountStatus || undefined,
+        followUpDelay: createForm.followUpDelay || undefined,
         isActive: true,
         sortOrder: 0
       }
-      
+
       const newDisposition = await dispositionsService.createDisposition(createData)
-      setDispositions(prev => [...prev, newDisposition])
+      loadDispositionsData() 
       cancelCreate()
-      
-      // Show success message
-      console.info(`✅ Disposition "${newDisposition.name}" created successfully`)
     } catch (error) {
       console.error('Failed to create disposition:', error)
       setError('Failed to create disposition.')
@@ -223,25 +225,19 @@ export default function Dispositions() {
 
   const saveEdit = async () => {
     if (!editingDisposition) return
-    
+
     try {
-      const categoryId = editForm.category || editingDisposition.categoryId
       const updateData = {
         name: editForm.label,
         description: editForm.description,
-        categoryId: categoryId
+        categoryId: editForm.categoryId,
+        newAccountStatus: editForm.newAccountStatus || undefined,
+        followUpDelay: editForm.followUpDelay || undefined
       }
-      
+
       const updated = await dispositionsService.updateDisposition(editingDisposition.id, updateData)
-      setDispositions(prev =>
-        prev.map(disp =>
-          disp.id === editingDisposition.id ? updated : disp
-        )
-      )
+      loadDispositionsData()
       cancelEdit()
-      
-      // Show success message
-      console.info(`✅ Disposition "${updated.name}" updated successfully`)
     } catch (error) {
       console.error('Failed to update disposition:', error)
       setError('Failed to update disposition.')
@@ -274,10 +270,19 @@ export default function Dispositions() {
             </h1>
             <p className="text-muted-foreground mt-1">
               Manage call outcome codes and agent disposition options
-              {loading && " • Loading..."}
+              {loading && "  Loading..."}
             </p>
           </div>
           <div className="flex items-center space-x-2">
+            <Button 
+              variant="outline" 
+              className="glass-light border-glass-border"
+              onClick={handleSyncVicidial}
+              disabled={loading}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Sync Vicidial
+            </Button>
             {error && (
               <Button variant="outline" size="sm" onClick={loadDispositionsData}>
                 <RefreshCw className="w-4 h-4 mr-2" />
@@ -301,15 +306,15 @@ export default function Dispositions() {
               className="glass-light border-glass-border focus:ring-accent focus:border-accent"
             />
           </div>
-          <select 
+          <select
             className="glass-light border-glass-border rounded-lg px-3 py-2 text-sm focus:ring-accent focus:border-accent"
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
           >
             <option value="all">All Categories</option>
-            <option value="contact">Contact Made</option>
-            <option value="no_contact">No Contact</option>
-            <option value="outcome">Positive Outcome</option>
+            {categories.map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+            ))}
           </select>
         </div>
       </div>
@@ -317,62 +322,62 @@ export default function Dispositions() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card className="glass-card hover:shadow-accent transition-all duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
               Total Dispositions
             </CardTitle>
-            <FileText className="h-4 w-4 text-accent" />
+            <FileText className="h-3 w-3 text-accent" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono text-foreground">
+          <CardContent className="pt-0">
+            <div className="text-xl font-bold font-mono text-foreground">
               {categoryStats.total}
             </div>
-            <p className="text-xs text-muted-foreground">Active codes</p>
+            <p className="text-[10px] text-muted-foreground">Active codes</p>
           </CardContent>
         </Card>
 
         <Card className="glass-card hover:shadow-accent transition-all duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
               Contact Made
             </CardTitle>
-            <Phone className="h-4 w-4 text-success" />
+            <Phone className="h-3 w-3 text-success" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono text-success">
+          <CardContent className="pt-0">
+            <div className="text-xl font-bold font-mono text-success">
               {categoryStats.contact}
             </div>
-            <p className="text-xs text-muted-foreground">Direct contact codes</p>
+            <p className="text-[10px] text-muted-foreground">Direct contact codes</p>
           </CardContent>
         </Card>
 
         <Card className="glass-card hover:shadow-accent transition-all duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
               No Contact
             </CardTitle>
-            <XCircle className="h-4 w-4 text-warning" />
+            <XCircle className="h-3 w-3 text-warning" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono text-warning">
+          <CardContent className="pt-0">
+            <div className="text-xl font-bold font-mono text-warning">
               {categoryStats.no_contact}
             </div>
-            <p className="text-xs text-muted-foreground">No contact codes</p>
+            <p className="text-[10px] text-muted-foreground">No contact codes</p>
           </CardContent>
         </Card>
 
         <Card className="glass-card hover:shadow-accent transition-all duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
               Positive Outcomes
             </CardTitle>
-            <CheckCircle className="h-4 w-4 text-success" />
+            <CheckCircle className="h-3 w-3 text-success" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono text-success">
+          <CardContent className="pt-0">
+            <div className="text-xl font-bold font-mono text-success">
               {categoryStats.outcome}
             </div>
-            <p className="text-xs text-muted-foreground">Success codes</p>
+            <p className="text-[10px] text-muted-foreground">Success codes</p>
           </CardContent>
         </Card>
       </div>
@@ -380,8 +385,8 @@ export default function Dispositions() {
       {/* Dispositions Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 auto-rows-max">
         {filteredDispositions.map((disposition, index) => (
-          <Card 
-            key={disposition.id} 
+          <Card
+            key={disposition.id}
             className="glass-card hover:shadow-accent transition-all duration-300 animate-slide-up h-fit"
             style={{ animationDelay: `${index * 0.05}s` }}
           >
@@ -394,17 +399,12 @@ export default function Dispositions() {
                       {disposition.name}
                     </CardTitle>
                     <CardDescription className="text-xs font-mono text-muted-foreground">
-                      {disposition.key}
+                      {disposition.code}
                     </CardDescription>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center space-x-2">
-                  {disposition.isDefault && (
-                    <Badge variant="outline" className="text-xs border-accent text-accent">
-                      Default
-                    </Badge>
-                  )}
                   <Switch
                     checked={disposition.isActive}
                     onCheckedChange={() => toggleActive(disposition.id)}
@@ -412,72 +412,78 @@ export default function Dispositions() {
                   />
                 </div>
               </div>
-            </CardHeader>
-            
+            </CardHeader >
+
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 {disposition.description}
               </p>
-              
+
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  <Badge className={`${getColorClass(disposition.color, "bg")}/10 ${getColorClass(disposition.color, "text")} border-${disposition.color}/20`}>
-                    {getCategoryLabel(disposition.category?.name)}
+                  <Badge className={`${getColorClass(disposition.category?.color, "bg")}/10 ${getColorClass(disposition.category?.color, "text")} border-${disposition.category?.color}/20`}>
+                    {disposition.category?.name || "Uncategorized"}
                   </Badge>
                 </div>
                 <div className="text-right">
                   <div className="text-sm font-mono font-bold text-foreground">
-                    {/* TODO: Get usage count from stats */}
-                    0
+                    {disposition.usageCount || 0}
                   </div>
                   <div className="text-xs text-muted-foreground">uses</div>
                 </div>
               </div>
-              
+
               <div className="flex items-center space-x-2 pt-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="flex-1 glass-light border-glass-border"
                   onClick={() => startEdit(disposition)}
                 >
                   <Edit className="w-3 h-3 mr-1" />
                   Edit
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="glass-light border-glass-border text-destructive hover:bg-destructive/10"
-                  disabled={disposition.isDefault}
+                  onClick={() => {
+                      if(confirm("Are you sure you want to delete this disposition?")) {
+                          dispositionsService.deleteDisposition(disposition.id).then(() => loadDispositionsData());
+                      }
+                  }}
                 >
                   <Trash2 className="w-3 h-3" />
                 </Button>
               </div>
             </CardContent>
-          </Card>
-        ))}
+          </Card >
+        ))
+        }
 
-        {filteredDispositions.length === 0 && (
-          <div className="col-span-full">
-            <Card className="glass-card">
-              <CardContent className="text-center py-12">
-                <MessageSquare className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-foreground mb-2">No Dispositions Found</h3>
-                <p className="text-muted-foreground mb-4">
-                  No dispositions match your current search and filter criteria.
-                </p>
-                <Button className="bg-gradient-accent hover:shadow-accent">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create New Disposition
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-      </div>
+        {
+          filteredDispositions.length === 0 && (
+            <div className="col-span-full">
+              <Card className="glass-card">
+                <CardContent className="text-center py-12">
+                  <MessageSquare className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">No Dispositions Found</h3>
+                  <p className="text-muted-foreground mb-4">
+                    No dispositions match your current search and filter criteria.
+                  </p>
+                  <Button className="bg-gradient-accent hover:shadow-accent" onClick={startCreate}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create New Disposition
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          )
+        }
+      </div >
 
       {/* Edit Disposition Dialog */}
-      <Dialog open={!!editingDisposition} onOpenChange={() => cancelEdit()}>
+      < Dialog open={!!editingDisposition} onOpenChange={() => cancelEdit()}>
         <DialogContent className="glass-dialog border-glass-border max-w-md z-50 pointer-events-auto">
           <DialogHeader>
             <DialogTitle className="text-foreground">Edit Disposition</DialogTitle>
@@ -485,7 +491,7 @@ export default function Dispositions() {
               Modify the disposition details below. Changes will be saved immediately.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="edit-label" className="text-sm font-medium text-foreground">
@@ -514,14 +520,13 @@ export default function Dispositions() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
+            <div className="space-y-2">
                 <Label htmlFor="edit-category" className="text-sm font-medium text-foreground">
                   Category
                 </Label>
-                <Select 
-                  value={editForm.category} 
-                  onValueChange={(value) => setEditForm(prev => ({ ...prev, category: value }))}
+                <Select
+                  value={editForm.categoryId}
+                  onValueChange={(value) => setEditForm(prev => ({ ...prev, categoryId: value }))}
                 >
                   <SelectTrigger className="glass-light border-glass-border focus:ring-accent focus:border-accent">
                     <SelectValue />
@@ -531,7 +536,7 @@ export default function Dispositions() {
                       <SelectItem key={category.id} value={category.id}>
                         <div className="flex items-center space-x-2">
                           {getCategoryIcon(category.name)}
-                          <span>{getCategoryLabel(category.name)}</span>
+                          <span>{category.name}</span>
                         </div>
                       </SelectItem>
                     ))}
@@ -539,40 +544,44 @@ export default function Dispositions() {
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="edit-color" className="text-sm font-medium text-foreground">
-                  Color Theme
-                </Label>
-                <Select 
-                  value={editForm.color} 
-                  onValueChange={(value) => setEditForm(prev => ({ ...prev, color: value }))}
-                >
-                  <SelectTrigger className="glass-light border-glass-border focus:ring-accent focus:border-accent">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="glass-card border-glass-border bg-background z-50">
-                    <SelectItem value="success">Success (Green)</SelectItem>
-                    <SelectItem value="warning">Warning (Yellow)</SelectItem>
-                    <SelectItem value="destructive">Destructive (Red)</SelectItem>
-                    <SelectItem value="accent">Accent (Blue)</SelectItem>
-                    <SelectItem value="muted">Muted (Gray)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-new-status" className="text-sm font-medium text-foreground">
+                New Account Status (Automation)
+              </Label>
+              <Select
+                value={editForm.newAccountStatus || "none"}
+                onValueChange={(value) => setEditForm(prev => ({ ...prev, newAccountStatus: value === "none" ? "" : value }))}
+              >
+                <SelectTrigger className="glass-light border-glass-border focus:ring-accent focus:border-accent">
+                  <SelectValue placeholder="No change" />
+                </SelectTrigger>
+                <SelectContent className="glass-card border-glass-border bg-background z-50">
+                  <SelectItem value="none">No change</SelectItem>
+                  <SelectItem value="NEW">New</SelectItem>
+                  <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                  <SelectItem value="INTERESTED">Interested</SelectItem>
+                  <SelectItem value="NOT_INTERESTED">Not Interested</SelectItem>
+                  <SelectItem value="CLOSED">Closed</SelectItem>
+                  <SelectItem value="CALLBACK">Callback</SelectItem>
+                  <SelectItem value="DNC">Do Not Call</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
-            {editingDisposition?.isDefault && (
-              <div className="glass-light p-3 rounded-lg border border-accent/20">
-                <div className="flex items-center space-x-2">
-                  <Badge variant="outline" className="border-accent text-accent">
-                    Default Disposition
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    This is a system default disposition
-                  </span>
-                </div>
-              </div>
-            )}
+            <div className="space-y-2">
+              <Label htmlFor="edit-delay" className="text-sm font-medium text-foreground">
+                Follow-up Delay (Minutes)
+              </Label>
+              <Input
+                id="edit-delay"
+                type="number"
+                min="0"
+                value={editForm.followUpDelay}
+                onChange={(e) => setEditForm(prev => ({ ...prev, followUpDelay: parseInt(e.target.value) || 0 }))}
+                className="glass-light border-glass-border focus:ring-accent focus:border-accent"
+                placeholder="0"
+              />
+            </div>
           </div>
 
           <DialogFooter className="flex space-x-2">
@@ -592,10 +601,10 @@ export default function Dispositions() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog >
 
       {/* Create Disposition Dialog */}
-      <Dialog open={isCreating} onOpenChange={() => cancelCreate()}>
+      < Dialog open={isCreating} onOpenChange={() => cancelCreate()}>
         <DialogContent className="glass-dialog border-glass-border max-w-md z-50 pointer-events-auto">
           <DialogHeader>
             <DialogTitle className="text-foreground">Create New Disposition</DialogTitle>
@@ -652,7 +661,7 @@ export default function Dispositions() {
               <Label htmlFor="create-category" className="text-sm font-medium text-foreground">
                 Category *
               </Label>
-              <Select value={createForm.category} onValueChange={(value) => setCreateForm(prev => ({ ...prev, category: value }))}>
+              <Select value={createForm.categoryId} onValueChange={(value) => setCreateForm(prev => ({ ...prev, categoryId: value }))}>
                 <SelectTrigger className="glass-light border-glass-border focus:ring-accent focus:border-accent">
                   <SelectValue placeholder="Select a category" />
                 </SelectTrigger>
@@ -661,12 +670,58 @@ export default function Dispositions() {
                     <SelectItem key={category.id} value={category.id}>
                       <div className="flex items-center space-x-2">
                         {getCategoryIcon(category.name)}
-                        <span>{getCategoryLabel(category.name)}</span>
+                        <span>{category.name}</span>
                       </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Automation Settings */}
+            <div className="space-y-4 pt-2 border-t border-border/50">
+              <h4 className="text-sm font-medium text-muted-foreground">Automation Settings</h4>
+              
+              <div>
+                <Label htmlFor="create-new-status" className="text-sm font-medium text-foreground">
+                  New Account Status
+                </Label>
+                <Select 
+                  value={createForm.newAccountStatus || "none"} 
+                  onValueChange={(value) => setCreateForm(prev => ({ ...prev, newAccountStatus: value === "none" ? "" : value }))}
+                >
+                  <SelectTrigger className="glass-light border-glass-border focus:ring-accent focus:border-accent">
+                    <SelectValue placeholder="No change" />
+                  </SelectTrigger>
+                  <SelectContent className="glass-dark border-glass-border">
+                    <SelectItem value="none">No change</SelectItem>
+                    <SelectItem value="NEW">New</SelectItem>
+                    <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                    <SelectItem value="INTERESTED">Interested</SelectItem>
+                    <SelectItem value="NOT_INTERESTED">Not Interested</SelectItem>
+                    <SelectItem value="CLOSED">Closed</SelectItem>
+                    <SelectItem value="CALLBACK">Callback</SelectItem>
+                    <SelectItem value="DNC">Do Not Call</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">Automatically update account status when this disposition is selected</p>
+              </div>
+
+              <div>
+                <Label htmlFor="create-delay" className="text-sm font-medium text-foreground">
+                  Follow-up Delay (Minutes)
+                </Label>
+                <Input
+                  id="create-delay"
+                  type="number"
+                  min="0"
+                  value={createForm.followUpDelay}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, followUpDelay: parseInt(e.target.value) || 0 }))}
+                  className="glass-light border-glass-border focus:ring-accent focus:border-accent"
+                  placeholder="0"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Delay before the account appears in queues again</p>
+              </div>
             </div>
 
             {/* Options */}
@@ -705,7 +760,7 @@ export default function Dispositions() {
             </Button>
             <Button
               onClick={saveCreate}
-              disabled={!createForm.label.trim() || !createForm.code.trim() || !createForm.category}
+              disabled={!createForm.label.trim() || !createForm.code.trim() || !createForm.categoryId}
               className="bg-gradient-accent hover:shadow-accent"
             >
               <Plus className="w-4 h-4 mr-2" />
@@ -713,7 +768,7 @@ export default function Dispositions() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
-    </div>
+      </Dialog >
+    </div >
   )
 }
