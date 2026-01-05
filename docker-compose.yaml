@@ -21,7 +21,7 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: prod.Dockerfile
+      dockerfile: Dockerfile
     container_name: dial-craft-backend
     expose:
       - "3000"
