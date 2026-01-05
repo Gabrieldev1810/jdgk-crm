@@ -23,7 +23,8 @@ echo "Testing database connection..."
 if npx prisma db push --accept-data-loss --skip-generate > /dev/null 2>&1; then
     echo "✅ Database connected and schema applied successfully!"
 else
-    echo "⚠️ Database connection failed - application will retry during startup"
+    echo "❌ Database connection or schema push failed!"
+    exit 1
 fi
 
 # Seed the admin user (verified working in local tests)
